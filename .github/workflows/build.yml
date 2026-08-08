@@ -46,10 +46,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:0 string ar" "$PL" || true
           /usr/libexec/PlistBuddy -c "Add :CFBundleDevelopmentRegion string ar" "$PL" \
             || /usr/libexec/PlistBuddy -c "Set :CFBundleDevelopmentRegion ar" "$PL"
-          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'يحتاج التطبيق الوصول لصورك لاختيار صورة حسابك.'" "$PL" \
-            || /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'يحتاج التطبيق الوصول لصورك لاختيار صورة حسابك.'" "$PL"
-          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'يستخدم التطبيق موقعك لتحديد عنوان التوصيل وتتبّع طلبك.'" "$PL" \
-            || /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'يستخدم التطبيق موقعك لتحديد عنوان التوصيل وتتبّع طلبك.'" "$PL"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'photo access'" "$PL" \
+            || /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'photo access'" "$PL"
 
       - run: flutter pub get
 
@@ -64,9 +62,15 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Write API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           mkdir -p ios/keys
-          echo "${{ secrets.ASC_KEY_P8 }}" > ios/keys/AuthKey.p8
+          printf '%s\n' "$ASC_KEY_P8" > ios/keys/AuthKey.p8
+          echo "--- diagnostics ---"
+          head -1 ios/keys/AuthKey.p8
+          tail -1 ios/keys/AuthKey.p8
+          wc -l ios/keys/AuthKey.p8
 
       - name: Create Fastfile
         run: |
@@ -84,6 +88,26 @@ jobs:
                 key_filepath: key_path,
                 in_house: false
               )
+
+              begin
+                require 'spaceship'
+                Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+                  key_id: ENV["ASC_KEY_ID"],
+                  issuer_id: ENV["ASC_ISSUER_ID"],
+                  filepath: key_path
+                )
+                all = Spaceship::ConnectAPI::Certificate.all
+                old = all.select do |c|
+                  ["IOS_DISTRIBUTION", "DISTRIBUTION"].include?(c.certificate_type.to_s)
+                end
+                UI.important("distribution certs: #{old.count}")
+                if old.count >= 2
+                  old.first.delete!
+                  UI.important("deleted oldest cert to free a slot")
+                end
+              rescue => e
+                UI.important("cert cleanup skipped: #{e.class} - #{e.message}")
+              end
 
               create_keychain(
                 name: "build.keychain",
@@ -147,4 +171,4 @@ jobs:
           fastlane beta
 
       - name: Done
-        run: echo "رُفع إلى TestFlight"
+        run: echo "uploaded to TestFlight"
