@@ -20,6 +20,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   final _service = StoreService();
   Product? _product;
   Map<String, String> _selected = {};
+  int _qty = 1;
   bool _loading = true;
   bool _adding = false;
   bool _favorite = false;
@@ -39,7 +40,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       if (!mounted) return;
       setState(() {
         _product = p;
-        // اختيار افتراضي لأول قيمة متاحة في كل نوع خيار
         for (final t in p.optionTypes) {
           final first = t.values.firstWhere(
             (v) => p.isValueAvailable(v.id, {}),
@@ -63,7 +63,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     setState(() => _adding = true);
     try {
-      await _service.addToCart(v.id);
+      await _service.addToCart(v.id, quantity: _qty);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -98,6 +98,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     final p = _product!;
     final v = _variant;
     final outOfStock = v == null || !v.inStock;
+    final maxQty = v?.stock ?? 99;
 
     return Scaffold(
       appBar: const AppHeader(title: 'التفاصيل'),
@@ -105,7 +106,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // صورة المنتج مع زر القلب أعلى اليسار
             Padding(
               padding: AppSpacing.screenPadding,
               child: AspectRatio(
@@ -156,7 +156,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   Text(p.name, style: AppText.h3SemiBold),
                   const SizedBox(height: 13),
 
-                  // التقييم — قابل للنقر لفتح شاشة التقييمات
                   GestureDetector(
                     onTap: () => Navigator.of(context)
                         .pushNamed('/reviews', arguments: p.id),
@@ -187,14 +186,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
                   const SizedBox(height: AppSpacing.xl),
 
-                  // ★ محدّد الخيارات الديناميكي ★
                   OptionSelector(
                     product: p,
                     selected: _selected,
-                    onChanged: (next) => setState(() => _selected = next),
+                    onChanged: (next) => setState(() {
+                      _selected = next;
+                      _qty = 1;
+                    }),
                   ),
 
-                  // المنتجات الرقمية: تنبيه بأن التسليم بالبريد
+                  // ★ محدّد الكمية ★ — يظهر لكل المنتجات ما عدا الرقمية
+                  if (!p.isDigital && !outOfStock) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      children: [
+                        Text('الكمية', style: AppText.b1SemiBold),
+                        const Spacer(),
+                        _QtyStepper(
+                          quantity: _qty,
+                          max: maxQty,
+                          onChanged: (q) => setState(() => _qty = q),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
+
                   if (p.isDigital)
                     Container(
                       width: double.infinity,
@@ -226,7 +244,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         ),
       ),
 
-      // الشريط السفلي الثابت: السعر يمينًا وزر الإضافة يسارًا
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: AppColors.white,
@@ -237,7 +254,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             padding: const EdgeInsets.fromLTRB(25, 16, 25, 16),
             child: Row(
               children: [
-                // قياس فِقما: عرض 215 ، ارتفاع 54
                 SizedBox(
                   width: 215,
                   child: PrimaryButton(
@@ -254,7 +270,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   children: [
                     Text('السعر',
                         style: AppText.b1Regular.copyWith(color: AppColors.body)),
-                    Text(formatPrice(_price), style: AppText.h3SemiBold),
+                    Text(formatPrice(_price * _qty), style: AppText.h3SemiBold),
                   ],
                 ),
               ],
@@ -266,13 +282,56 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 }
 
+/// محدّد الكمية — زرّان مربّعان (+ / −) ورقم بينهما، بنفس نمط السلة.
+class _QtyStepper extends StatelessWidget {
+  final int quantity;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  const _QtyStepper({
+    required this.quantity,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      textDirection: TextDirection.rtl,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _box(Icons.remove, quantity > 1 ? () => onChanged(quantity - 1) : null),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text('$quantity', style: AppText.b1SemiBold),
+        ),
+        _box(Icons.add, quantity < max ? () => onChanged(quantity + 1) : null),
+      ],
+    );
+  }
+
+  Widget _box(IconData icon, VoidCallback? onTap) => GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.heartSmall),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Icon(icon,
+              size: 18, color: onTap == null ? AppColors.line : AppColors.ink),
+        ),
+      );
+}
+
 // ================================================================== التقييمات
 class ReviewsScreen extends StatelessWidget {
   const ReviewsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // توزيع النجوم كما في التصميم
     const distribution = [0.78, 0.47, 0.21, 0.11, 0.05];
 
     return Scaffold(
@@ -280,7 +339,6 @@ class ReviewsScreen extends StatelessWidget {
       body: ListView(
         padding: AppSpacing.screenPadding,
         children: [
-          // الملخّص: المتوسط الكبير + أشرطة التوزيع
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
