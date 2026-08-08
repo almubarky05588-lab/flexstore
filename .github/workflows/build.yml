@@ -1,0 +1,150 @@
+name: Build iOS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'supabase/**'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: com.flexstore.flexstore
+      TEAM_ID: ${{ secrets.TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+      FASTLANE_HIDE_CHANGELOG: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate iOS project
+        run: |
+          mkdir -p /tmp/keep
+          cp -r lib assets pubspec.yaml /tmp/keep/
+          flutter create --platforms=ios --org com.flexstore --project-name flexstore .
+          rm -rf lib assets pubspec.yaml test
+          cp -r /tmp/keep/lib /tmp/keep/assets .
+          cp /tmp/keep/pubspec.yaml .
+
+      - name: Patch Info.plist
+        run: |
+          PL=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PL" \
+            || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PL"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations array" "$PL" || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:0 string ar" "$PL" || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDevelopmentRegion string ar" "$PL" \
+            || /usr/libexec/PlistBuddy -c "Set :CFBundleDevelopmentRegion ar" "$PL"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'يحتاج التطبيق الوصول لصورك لاختيار صورة حسابك.'" "$PL" \
+            || /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'يحتاج التطبيق الوصول لصورك لاختيار صورة حسابك.'" "$PL"
+          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'يستخدم التطبيق موقعك لتحديد عنوان التوصيل وتتبّع طلبك.'" "$PL" \
+            || /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'يستخدم التطبيق موقعك لتحديد عنوان التوصيل وتتبّع طلبك.'" "$PL"
+
+      - run: flutter pub get
+
+      - name: Set build number
+        run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} + 1 ))" >> $GITHUB_ENV
+
+      - name: Build unsigned
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-number=${{ env.BUILD_NUMBER }} \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Write API key
+        run: |
+          mkdir -p ios/keys
+          echo "${{ secrets.ASC_KEY_P8 }}" > ios/keys/AuthKey.p8
+
+      - name: Create Fastfile
+        run: |
+          mkdir -p ios/fastlane
+          cat > ios/fastlane/Fastfile <<'RUBY'
+          default_platform(:ios)
+
+          platform :ios do
+            lane :beta do
+              key_path = File.expand_path("../keys/AuthKey.p8", __dir__)
+
+              api_key = app_store_connect_api_key(
+                key_id: ENV["ASC_KEY_ID"],
+                issuer_id: ENV["ASC_ISSUER_ID"],
+                key_filepath: key_path,
+                in_house: false
+              )
+
+              create_keychain(
+                name: "build.keychain",
+                password: "temp1234",
+                default_keychain: true,
+                unlock: true,
+                timeout: 3600,
+                lock_when_sleeps: false
+              )
+
+              cert(
+                development: false,
+                api_key: api_key,
+                team_id: ENV["TEAM_ID"],
+                keychain_path: File.expand_path("~/Library/Keychains/build.keychain-db"),
+                keychain_password: "temp1234"
+              )
+
+              sigh(
+                app_identifier: ENV["BUNDLE_ID"],
+                api_key: api_key,
+                team_id: ENV["TEAM_ID"],
+                development: false,
+                force: true
+              )
+
+              update_code_signing_settings(
+                use_automatic_signing: false,
+                path: "Runner.xcodeproj",
+                team_id: ENV["TEAM_ID"],
+                bundle_identifier: ENV["BUNDLE_ID"],
+                code_sign_identity: "Apple Distribution",
+                profile_name: lane_context[SharedValues::SIGH_NAME]
+              )
+
+              build_app(
+                workspace: "Runner.xcworkspace",
+                scheme: "Runner",
+                configuration: "Release",
+                export_method: "app-store",
+                skip_profile_detection: true,
+                export_options: {
+                  provisioningProfiles: {
+                    ENV["BUNDLE_ID"] => lane_context[SharedValues::SIGH_NAME]
+                  }
+                }
+              )
+
+              upload_to_testflight(
+                api_key: api_key,
+                skip_waiting_for_build_processing: true
+              )
+            end
+          end
+          RUBY
+
+      - name: Run fastlane
+        working-directory: ios
+        run: |
+          gem install fastlane --no-document
+          fastlane beta
+
+      - name: Done
+        run: echo "رُفع إلى TestFlight"
