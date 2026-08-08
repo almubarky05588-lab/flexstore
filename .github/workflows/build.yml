@@ -54,9 +54,9 @@ jobs:
       - name: Set build number
         run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} + 1 ))" >> $GITHUB_ENV
 
-      - name: Prepare Flutter build
+      - name: Build unsigned
         run: |
-          flutter build ios --config-only --release \
+          flutter build ios --release --no-codesign \
             --build-number=${{ env.BUILD_NUMBER }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
@@ -67,10 +67,6 @@ jobs:
         run: |
           mkdir -p ios/keys
           printf '%s\n' "$ASC_KEY_P8" > ios/keys/AuthKey.p8
-          echo "--- diagnostics ---"
-          head -1 ios/keys/AuthKey.p8
-          tail -1 ios/keys/AuthKey.p8
-          wc -l ios/keys/AuthKey.p8
 
       - name: Create Fastfile
         run: |
@@ -89,26 +85,6 @@ jobs:
                 in_house: false
               )
 
-              begin
-                require 'spaceship'
-                Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-                  key_id: ENV["ASC_KEY_ID"],
-                  issuer_id: ENV["ASC_ISSUER_ID"],
-                  filepath: key_path
-                )
-                all = Spaceship::ConnectAPI::Certificate.all
-                old = all.select do |c|
-                  ["IOS_DISTRIBUTION", "DISTRIBUTION"].include?(c.certificate_type.to_s)
-                end
-                UI.important("distribution certs: #{old.count}")
-                if old.count >= 2
-                  old.first.delete!
-                  UI.important("deleted oldest cert to free a slot")
-                end
-              rescue => e
-                UI.important("cert cleanup skipped: #{e.class} - #{e.message}")
-              end
-
               create_keychain(
                 name: "build.keychain",
                 password: "temp1234",
@@ -118,13 +94,29 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              cert(
-                development: false,
-                api_key: api_key,
-                team_id: ENV["TEAM_ID"],
-                keychain_path: File.expand_path("~/Library/Keychains/build.keychain-db"),
-                keychain_password: "temp1234"
+              # لا ننشئ شهادة جديدة (السلوت ممتلئ ولا يجوز حذف شهادة قد تخص تطبيقًا آخر).
+              # نعيد استخدام إحدى شهادات التوزيع الموجودة عبر تنزيلها من آبل.
+              require 'spaceship'
+              Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+                key_id: ENV["ASC_KEY_ID"],
+                issuer_id: ENV["ASC_ISSUER_ID"],
+                filepath: key_path
               )
+
+              keychain_path = File.expand_path("~/Library/Keychains/build.keychain-db")
+
+              dist_certs = Spaceship::ConnectAPI::Certificate.all.select do |c|
+                ["IOS_DISTRIBUTION", "DISTRIBUTION"].include?(c.certificate_type.to_s)
+              end
+              UI.important("distribution certs found: #{dist_certs.count}")
+              UI.user_error!("no distribution certificate found on the account") if dist_certs.empty?
+
+              chosen = dist_certs.first
+              cert_content = chosen.certificate_content
+              cer_path = File.expand_path("dist.cer", Dir.pwd)
+              File.write(cer_path, Base64.decode64(cert_content))
+              sh("security import #{cer_path} -k #{keychain_path} -T /usr/bin/codesign -A || true")
+              UI.important("imported distribution certificate: #{chosen.id}")
 
               sigh(
                 app_identifier: ENV["BUNDLE_ID"],
