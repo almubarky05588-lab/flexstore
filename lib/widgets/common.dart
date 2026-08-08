@@ -4,7 +4,6 @@ import '../core/theme.dart';
 import 'app_icons.dart';
 
 /// ملف المكوّنات المشتركة — يقابل الـ Components في فِقما.
-/// كل شاشة تُبنى من هذه القطع فتبقى الواجهة متطابقة مع التصميم.
 
 // ---------------------------------------------------------------- تنسيق السعر
 final _priceFormat = NumberFormat('#,##0', 'en');
@@ -13,13 +12,14 @@ String formatPrice(num value, {String symbol = 'ر.س'}) =>
     '${_priceFormat.format(value)} $symbol';
 
 // ------------------------------------------------------- شريط علوي (Arrow/Bell)
-/// في التصميم: سهم الرجوع على اليمين، الجرس على اليسار، والعنوان في المنتصف.
+/// سهم الرجوع يمين، الجرس يسار، العنوان في المنتصف. نفرض RTL صراحةً.
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final bool showBack;
   final bool showBell;
   final int unreadCount;
   final VoidCallback? onBell;
+  final VoidCallback? onBack;
   final Widget? trailing;
 
   const AppHeader({
@@ -29,6 +29,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     this.showBell = true,
     this.unreadCount = 0,
     this.onBell,
+    this.onBack,
     this.trailing,
   });
 
@@ -44,13 +45,12 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
         child: Padding(
           padding: AppSpacing.screenPadding,
           child: Row(
+            textDirection: TextDirection.rtl,
             children: [
-              // اليسار في RTL = الجرس
-              if (showBell)
-                _BellButton(count: unreadCount, onTap: onBell)
+              if (showBack)
+                BackArrow(onTap: onBack)
               else
-                trailing ?? const SizedBox(width: 24),
-
+                const SizedBox(width: 24),
               Expanded(
                 child: Text(
                   title,
@@ -58,12 +58,10 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                   style: AppText.h3SemiBold.copyWith(color: AppColors.ink),
                 ),
               ),
-
-              // اليمين في RTL = الرجوع (سهم متجه لليمين)
-              if (showBack)
-                const BackArrow()
+              if (showBell)
+                _BellButton(count: unreadCount, onTap: onBell)
               else
-                const SizedBox(width: 24),
+                trailing ?? const SizedBox(width: 24),
             ],
           ),
         ),
@@ -81,6 +79,7 @@ class _BellButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 24,
         height: 24,
@@ -114,7 +113,7 @@ class PrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool loading;
-  final bool gradient; // زر "ابدأ الآن" في شاشة التعريف برتقالي متدرّج
+  final bool gradient;
 
   const PrimaryButton({
     super.key,
@@ -185,7 +184,6 @@ class CategoryChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          // المحدّد يستخدم التدرّج البرتقالي كما في التصميم
           color: selected ? null : AppColors.white,
           gradient: selected ? kAccentGradient : null,
           borderRadius: BorderRadius.circular(AppRadius.base),
@@ -248,7 +246,6 @@ class ProductGridCard extends StatelessWidget {
                             image: NetworkImage(imageUrl!), fit: BoxFit.cover),
                   ),
                 ),
-                // زر القلب أعلى يسار البطاقة كما في التصميم
                 Positioned(
                   top: 12,
                   left: 12,
@@ -324,6 +321,7 @@ class SearchField extends StatelessWidget {
         readOnly: readOnly,
         onTap: onTap,
         onChanged: onChanged,
+        textAlign: TextAlign.right,
         textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
           hintText: hint,
@@ -336,7 +334,6 @@ class SearchField extends StatelessWidget {
 }
 
 // ------------------------------------------------------------- الحالة الفارغة
-/// يُستخدم في: السلة فارغة، لا طلبات، لا محفوظات، لا إشعارات، لا نتائج بحث.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -374,7 +371,6 @@ class EmptyState extends StatelessWidget {
 }
 
 // ------------------------------------------------------- نافذة النجاح المنبثقة
-/// "مبروك! تم تنفيذ طلبك." — تظهر بعد الشراء وإضافة العنوان والبطاقة.
 Future<void> showSuccessDialog(
   BuildContext context, {
   required String title,
@@ -430,6 +426,7 @@ Future<void> showSuccessDialog(
 }
 
 // ------------------------------------------------------------ صف قائمة الحساب
+/// في RTL: الأيقونة يمين، ثم النص، ثم سهم "‹" على أقصى اليسار.
 class AccountRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -452,13 +449,14 @@ class AccountRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Row(
+          textDirection: TextDirection.rtl,
           children: [
+            Icon(icon, size: 24, color: color),
+            const SizedBox(width: AppSpacing.md),
+            Text(label, style: AppText.b1Medium.copyWith(color: color)),
+            const Spacer(),
             if (!danger)
               const Icon(Icons.chevron_left, size: 24, color: AppColors.body),
-            const Spacer(),
-            Text(label, style: AppText.b1Medium.copyWith(color: color)),
-            const SizedBox(width: AppSpacing.md),
-            Icon(icon, size: 24, color: color),
           ],
         ),
       ),
