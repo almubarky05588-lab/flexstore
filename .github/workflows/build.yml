@@ -54,9 +54,9 @@ jobs:
       - name: Set build number
         run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} + 1 ))" >> $GITHUB_ENV
 
-      - name: Build unsigned
+      - name: Prepare Flutter build
         run: |
-          flutter build ios --release --no-codesign \
+          flutter build ios --config-only --release \
             --build-number=${{ env.BUILD_NUMBER }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
