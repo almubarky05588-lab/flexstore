@@ -1,0 +1,35 @@
+name: flexstore
+description: متجر إلكتروني عربي بنظام منتجات مرن
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  supabase_flutter: ^2.5.6      # المصادقة وقاعدة البيانات والتخزين
+  flutter_riverpod: ^2.5.1      # إدارة الحالة
+  go_router: ^14.2.0            # التنقل
+  cached_network_image: ^3.3.1  # صور المنتجات
+  google_fonts: ^6.2.1          # ينزّل خط Cairo تلقائيًا
+  intl: ^0.19.0                 # تنسيق الأسعار والتواريخ بالعربي
+  google_maps_flutter: ^2.6.1   # خرائط تتبع الطلب والعناوين
+  google_sign_in: ^6.2.1
+  flutter_svg: ^2.0.10+1
+  shimmer: ^3.0.0               # حالات التحميل
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
