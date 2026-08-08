@@ -50,14 +50,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // العنوان "اكتشف" على اليمين والجرس على اليسار
+            // "اكتشف" على اليمين والجرس على اليسار
             Padding(
               padding: const EdgeInsets.fromLTRB(25, 12, 25, 0),
               child: Row(
+                textDirection: TextDirection.rtl,
                 children: [
-                  const _NotificationBell(),
-                  const Spacer(),
                   Text('اكتشف', style: AppText.h3SemiBold),
+                  const Spacer(),
+                  const _NotificationBell(),
                 ],
               ),
             ),
@@ -67,7 +68,15 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: AppSpacing.screenPadding,
               child: Row(
+                textDirection: TextDirection.rtl,
                 children: [
+                  Expanded(
+                    child: SearchField(
+                      readOnly: true,
+                      onTap: () => Navigator.of(context).pushNamed('/search'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
                   GestureDetector(
                     onTap: () => _openFilters(context),
                     child: Container(
@@ -80,19 +89,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Center(child: AppIcon.filter(color: AppColors.white)),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: SearchField(
-                      readOnly: true,
-                      onTap: () => Navigator.of(context).pushNamed('/search'),
-                    ),
-                  ),
                 ],
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
 
-            // حبّات التصنيفات — تمرير أفقي
+            // حبّات التصنيفات — تمرير أفقي يبدأ من اليمين
             SizedBox(
               height: 54,
               child: ListView(
@@ -243,13 +245,14 @@ class _FiltersSheetState extends State<FiltersSheet> {
             const SizedBox(height: AppSpacing.xl),
 
             Row(
+              textDirection: TextDirection.rtl,
               children: [
+                Text('الفلاتر', style: AppText.h4SemiBold),
+                const Spacer(),
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: const Icon(Icons.close, size: 24),
                 ),
-                const Spacer(),
-                Text('الفلاتر', style: AppText.h4SemiBold),
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -318,7 +321,6 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _results = [];
   bool _searched = false;
 
-  // عمليات البحث الأخيرة — تُحفظ محليًا في التطبيق الحقيقي
   final _recent = ['جينز', 'ملابس كاجوال', 'هودي', 'أحذية سوداء', 'تيشيرت بياقة V'];
 
   Future<void> _search(String q) async {
@@ -384,32 +386,34 @@ class _SearchScreenState extends State<SearchScreen> {
       padding: AppSpacing.screenPadding,
       children: [
         Row(
+          textDirection: TextDirection.rtl,
           children: [
+            Text('عمليات البحث الأخيرة', style: AppText.b1SemiBold),
+            const Spacer(),
             GestureDetector(
               onTap: () => setState(_recent.clear),
               child: Text('مسح الكل',
                   style: AppText.b2Medium.copyWith(color: AppColors.accent)),
             ),
-            const Spacer(),
-            Text('عمليات البحث الأخيرة', style: AppText.b1SemiBold),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
         for (final term in _recent) ...[
           Row(
+            textDirection: TextDirection.rtl,
             children: [
-              GestureDetector(
-                onTap: () => setState(() => _recent.remove(term)),
-                child: const Icon(Icons.cancel_outlined,
-                    size: 22, color: AppColors.body),
-              ),
-              const Spacer(),
               GestureDetector(
                 onTap: () {
                   _controller.text = term;
                   _search(term);
                 },
                 child: Text(term, style: AppText.b1Regular),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => setState(() => _recent.remove(term)),
+                child: const Icon(Icons.cancel_outlined,
+                    size: 22, color: AppColors.body),
               ),
             ],
           ),
@@ -439,7 +443,19 @@ class _ResultRow extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Row(
+        textDirection: TextDirection.rtl,
         children: [
+          Container(
+            width: 53, height: 53,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadius.base),
+              image: imageUrl == null
+                  ? null
+                  : DecorationImage(image: NetworkImage(imageUrl!), fit: BoxFit.cover),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -449,17 +465,6 @@ class _ResultRow extends StatelessWidget {
                 Text(formatPrice(price),
                     style: AppText.b3Medium.copyWith(color: AppColors.accent)),
               ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.lg),
-          Container(
-            width: 53, height: 53,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.base),
-              image: imageUrl == null
-                  ? null
-                  : DecorationImage(image: NetworkImage(imageUrl!), fit: BoxFit.cover),
             ),
           ),
         ],
