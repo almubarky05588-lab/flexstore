@@ -10,7 +10,7 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       BUNDLE_ID: com.flexstore.flexstore
@@ -22,6 +22,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          ls /Applications | grep Xcode || true
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer 2>/dev/null \
+            || sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer 2>/dev/null \
+            || sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer 2>/dev/null \
+            || sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer 2>/dev/null \
+            || sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer 2>/dev/null \
+            || echo "using default Xcode"
+          xcodebuild -version
 
       - uses: subosito/flutter-action@v2
         with:
@@ -84,22 +95,6 @@ jobs:
                 key_filepath: key_path,
                 in_house: false
               )
-
-              begin
-                require 'spaceship'
-                Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-                  key_id: ENV["ASC_KEY_ID"],
-                  issuer_id: ENV["ASC_ISSUER_ID"],
-                  filepath: key_path
-                )
-                all = Spaceship::ConnectAPI::Certificate.all
-                dist = all.select do |c|
-                  ["IOS_DISTRIBUTION", "DISTRIBUTION"].include?(c.certificate_type.to_s)
-                end
-                UI.important("distribution certs on account: #{dist.count}")
-              rescue => e
-                UI.important("cert listing skipped: #{e.class} - #{e.message}")
-              end
 
               create_keychain(
                 name: "build.keychain",
