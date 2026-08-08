@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../core/theme.dart';
 
@@ -11,7 +11,6 @@ class AppIcon extends StatelessWidget {
 
   const AppIcon(this.name, {super.key, this.size = 24, this.color});
 
-  // اختصارات للأيقونات المستخدمة كثيرًا
   static Widget bell({double size = 24, Color? color}) =>
       AppIcon('bell', size: size, color: color);
   static Widget heart({double size = 24, Color? color}) =>
@@ -39,18 +38,29 @@ class AppIcon extends StatelessWidget {
 }
 
 /// سهم الرجوع — في التصميم يتجه لليمين (لأن الواجهة RTL).
+/// يرجع للصفحة السابقة إن وُجدت، وإلا يرجع للرئيسية بدل أن يعلّق بلا فائدة.
 class BackArrow extends StatelessWidget {
   final VoidCallback? onTap;
   const BackArrow({super.key, this.onTap});
 
+  void _defaultBack(BuildContext context) {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    } else {
+      nav.pushNamedAndRemoveUntil('/home', (route) => false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap ?? () => Navigator.of(context).maybePop(),
+      onTap: onTap ?? () => _defaultBack(context),
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 24,
         height: 24,
-        // الأصل يشير لليسار، فنعكسه أفقيًا كما في فِقما
+        // الأصل يشير لليسار، فنعكسه أفقيًا ليتّجه يمينًا كما في فِقما
         child: Transform.flip(
           flipX: true,
           child: AppIcon.arrow(color: AppColors.ink),
