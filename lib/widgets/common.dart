@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../core/theme.dart';
@@ -45,7 +46,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
         child: Padding(
           padding: AppSpacing.screenPadding,
           child: Row(
-            textDirection: TextDirection.rtl,
+            textDirection: ui.TextDirection.rtl,
             children: [
               if (showBack)
                 BackArrow(onTap: onBack)
@@ -449,7 +450,7 @@ class AccountRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Row(
-          textDirection: TextDirection.rtl,
+          textDirection: ui.TextDirection.rtl,
           children: [
             Icon(icon, size: 24, color: color),
             const SizedBox(width: AppSpacing.md),
