@@ -19,6 +19,8 @@ jobs:
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       FASTLANE_SKIP_UPDATE_CHECK: 1
       FASTLANE_HIDE_CHANGELOG: 1
 
@@ -66,13 +68,6 @@ jobs:
       - name: Set build number
         run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} + 1 ))" >> $GITHUB_ENV
 
-      - name: Prepare Xcode project
-        run: |
-          flutter build ios --config-only --release --no-codesign \
-            --build-number=${{ env.BUILD_NUMBER }} \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} || true
-
       - name: Write API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -98,7 +93,6 @@ jobs:
               )
 
               keychain_pass = "temp1234"
-              keychain_path = File.expand_path("~/Library/Keychains/build.keychain-db")
 
               create_keychain(
                 name: "build.keychain",
@@ -109,8 +103,7 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              # الخزنة: ينشئ الشهادة أول مرة ويخزّنها في ios-certs،
-              # وكل بناء بعده يسحبها جاهزة بدل إنشاء جديدة.
+              # 1) الشهادة والبروفايل من الخزنة (أو إنشاؤها أول مرة)
               match(
                 type: "appstore",
                 app_identifier: ENV["BUNDLE_ID"],
@@ -123,8 +116,16 @@ jobs:
                 readonly: false
               )
 
-              profile_name = ENV["sigh_#{ENV['BUNDLE_ID']}_appstore_profile-name"] \
-                || lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][ENV["BUNDLE_ID"]]
+              # 2) الآن بعد توفر الشهادة: نخلي Flutter يبني التطبيق كاملًا
+              #    (يولّد كل ملفات البناء التي يحتاجها سكربت Xcode)
+              Dir.chdir("../..") do
+                sh("flutter build ios --release --no-codesign " \
+                   "--build-number=#{ENV['BUILD_NUMBER']} " \
+                   "--dart-define=SUPABASE_URL=#{ENV['SUPABASE_URL']} " \
+                   "--dart-define=SUPABASE_ANON_KEY=#{ENV['SUPABASE_ANON_KEY']}")
+              end
+
+              profile_name = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][ENV["BUNDLE_ID"]]
 
               update_code_signing_settings(
                 use_automatic_signing: false,
@@ -135,11 +136,13 @@ jobs:
                 profile_name: profile_name
               )
 
+              # 3) الأرشفة والتوقيع والرفع — يعيد استخدام بناء Flutter الجاهز
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
                 configuration: "Release",
                 export_method: "app-store",
+                skip_build_archive: false,
                 skip_profile_detection: true,
                 export_options: {
                   provisioningProfiles: {
