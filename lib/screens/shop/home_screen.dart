@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../services/store_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/app_icons.dart';
+import '../main_shell.dart' show activeTabNotifier;
 
 /// الرئيسية "اكتشف" — بحث + فلتر + حبّات التصنيفات + شبكة منتجات عمودين.
 class HomeScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _service = StoreService();
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _products = [];
+  Set<String> _favoriteIds = {};
   String? _selectedCategory;
   bool _loading = true;
 
@@ -23,6 +25,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _load();
+    activeTabNotifier.addListener(_onTabChanged);
+  }
+
+  @override
+  void dispose() {
+    activeTabNotifier.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    // الرئيسية = تبويب 0: نحدّث المفضلة عند الرجوع لها لتلوين القلوب صح
+    if (activeTabNotifier.value == 0 && mounted) _loadFavorites();
   }
 
   Future<void> _load() async {
@@ -31,14 +45,53 @@ class _HomeScreenState extends State<HomeScreen> {
       final results = await Future.wait([
         _service.categories(),
         _service.products(categoryId: _selectedCategory),
+        _service.favoriteIds(),
       ]);
       if (!mounted) return;
       setState(() {
-        _categories = results[0];
-        _products = results[1];
+        _categories = results[0] as List<Map<String, dynamic>>;
+        _products = results[1] as List<Map<String, dynamic>>;
+        _favoriteIds = results[2] as Set<String>;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadFavorites() async {
+    final ids = await _service.favoriteIds();
+    if (!mounted) return;
+    setState(() => _favoriteIds = ids);
+  }
+
+  Future<void> _toggleFavorite(String productId) async {
+    // تحديث فوري في الواجهة ثم الحفظ في القاعدة
+    setState(() {
+      if (_favoriteIds.contains(productId)) {
+        _favoriteIds.remove(productId);
+      } else {
+        _favoriteIds.add(productId);
+      }
+    });
+    try {
+      await _service.toggleFavorite(productId);
+    } catch (_) {
+      // فشل الحفظ: نرجع الحالة ونبلّغ
+      if (!mounted) return;
+      setState(() {
+        if (_favoriteIds.contains(productId)) {
+          _favoriteIds.remove(productId);
+        } else {
+          _favoriteIds.add(productId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذّر حفظ المفضلة، حاول مجددًا'),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -149,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             itemBuilder: (_, i) {
                               final p = _products[i];
                               final images = (p['product_images'] as List?) ?? [];
+                              final id = p['id'] as String;
                               return ProductGridCard(
                                 name: p['name_ar'] as String,
                                 price: p['base_price'] as num,
@@ -156,8 +210,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 imageUrl: images.isEmpty
                                     ? null
                                     : images.first['url'] as String,
+                                isFavorite: _favoriteIds.contains(id),
+                                onFavorite: () => _toggleFavorite(id),
                                 onTap: () => Navigator.of(context)
-                                    .pushNamed('/product', arguments: p['id']),
+                                    .pushNamed('/product', arguments: id),
                               );
                             },
                           ),
@@ -474,18 +530,96 @@ class _ResultRow extends StatelessWidget {
 }
 
 // ================================================================= المحفوظات
-class SavedItemsScreen extends StatelessWidget {
+/// شاشة المحفوظات الحقيقية — تجلب المفضلة من القاعدة وتعيد التحميل عند فتح تبويبها.
+class SavedItemsScreen extends StatefulWidget {
   const SavedItemsScreen({super.key});
+
+  @override
+  State<SavedItemsScreen> createState() => _SavedItemsScreenState();
+}
+
+class _SavedItemsScreenState extends State<SavedItemsScreen> {
+  final _service = StoreService();
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    activeTabNotifier.addListener(_onTabChanged);
+  }
+
+  @override
+  void dispose() {
+    activeTabNotifier.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    // المحفوظات = تبويب 2: أعد التحميل كلما فُتح
+    if (activeTabNotifier.value == 2 && mounted) _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final items = await _service.favorites();
+      if (!mounted) return;
+      setState(() => _items = items);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _remove(String productId) async {
+    setState(() =>
+        _items.removeWhere((f) => (f['products'] as Map)['id'] == productId));
+    await _service.toggleFavorite(productId);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const AppHeader(title: 'المحفوظات'),
-      body: const EmptyState(
-        icon: Icons.favorite_border,
-        title: 'لا توجد عناصر محفوظة!',
-        message: 'ما عندك عناصر محفوظة. ارجع للرئيسية وأضف بعضها.',
-      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _items.isEmpty
+              ? const EmptyState(
+                  icon: Icons.favorite_border,
+                  title: 'لا توجد عناصر محفوظة!',
+                  message: 'ما عندك عناصر محفوظة. ارجع للرئيسية وأضف بعضها.')
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(25, 8, 25, 24),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 17,
+                      mainAxisSpacing: 20,
+                      childAspectRatio: 161 / 232,
+                    ),
+                    itemCount: _items.length,
+                    itemBuilder: (_, i) {
+                      final p = _items[i]['products'] as Map<String, dynamic>;
+                      final images = (p['product_images'] as List?) ?? [];
+                      final id = p['id'] as String;
+                      return ProductGridCard(
+                        name: p['name_ar'] as String,
+                        price: p['base_price'] as num,
+                        compareAt: p['compare_at_price'] as num?,
+                        imageUrl: images.isEmpty
+                            ? null
+                            : images.first['url'] as String,
+                        isFavorite: true,
+                        onFavorite: () => _remove(id),
+                        onTap: () => Navigator.of(context)
+                            .pushNamed('/product', arguments: id),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }
