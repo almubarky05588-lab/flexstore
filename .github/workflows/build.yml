@@ -25,7 +25,6 @@ jobs:
 
       - name: Select Xcode 16
         run: |
-          ls /Applications | grep Xcode || true
           sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer 2>/dev/null \
             || sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer 2>/dev/null \
             || sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer 2>/dev/null \
@@ -96,9 +95,12 @@ jobs:
                 in_house: false
               )
 
+              keychain_pass = "temp1234"
+              keychain_path = File.expand_path("~/Library/Keychains/build.keychain-db")
+
               create_keychain(
                 name: "build.keychain",
-                password: "temp1234",
+                password: keychain_pass,
                 default_keychain: true,
                 unlock: true,
                 timeout: 3600,
@@ -109,9 +111,28 @@ jobs:
                 development: false,
                 api_key: api_key,
                 team_id: ENV["TEAM_ID"],
-                keychain_path: File.expand_path("~/Library/Keychains/build.keychain-db"),
-                keychain_password: "temp1234"
+                keychain_path: keychain_path,
+                keychain_password: keychain_pass
               )
+
+              # ===== تصدير الشهادة لحفظها كسرّ (مرة واحدة) =====
+              begin
+                cert_path = lane_context[SharedValues::CERT_FILE_PATH]
+                UI.important("CERT_FILE: #{cert_path}")
+                identity = sh("security find-identity -v -p codesigning #{keychain_path} | head -2", log: false)
+                UI.important(identity)
+                p12_path = File.expand_path("export_cert.p12", Dir.pwd)
+                cert_name = sh(%Q(security find-identity -v -p codesigning #{keychain_path} | grep 'Apple Distribution' | head -1 | sed 's/.*"\\(.*\\)"/\\1/), log: false).strip
+                UI.important("exporting identity: #{cert_name}")
+                sh(%Q(security export -k #{keychain_path} -t identities -f pkcs12 -P "exportpass123" -o #{p12_path}))
+                b64 = sh("base64 -i #{p12_path} | tr -d '\\n'", log: false)
+                UI.important("========== COPY P12 BASE64 BELOW (save as secret CERT_P12_BASE64) ==========")
+                puts b64
+                UI.important("========== COPY P12 BASE64 ABOVE ==========")
+              rescue => e
+                UI.important("p12 export skipped: #{e.class} - #{e.message}")
+              end
+              # ================================================
 
               sigh(
                 app_identifier: ENV["BUNDLE_ID"],
