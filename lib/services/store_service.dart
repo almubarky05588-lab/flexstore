@@ -1,39 +1,36 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
 
-/// طبقة الوصول للبيانات. كل استدعاء يمر عبر سياسات RLS في الخادم،
-/// فلا يمكن للعميل قراءة ما ليس له حتى لو عُدّل التطبيق.
+/// طبقة الوصول للبيانات — كل تعامل مع Supabase يمرّ من هنا.
 class StoreService {
-  final SupabaseClient _db = Supabase.instance.client;
+  final _client = Supabase.instance.client;
 
-  // ---------------------------------------------------------------- الكتالوج
+  String get _uid => _client.auth.currentUser!.id;
 
-  /// إعدادات المتجر — منها تُقرأ العملة ونسبة الضريبة واسم المتجر.
+  // ------------------------------------------------------------ إعدادات المتجر
   Future<Map<String, dynamic>> storeSettings() async {
-    return await _db.from('store_settings').select().eq('id', 1).single();
+    final rows = await _client.from('store_settings').select().limit(1);
+    return rows.isEmpty ? {} : rows.first;
   }
 
+  // ----------------------------------------------------------------- التصنيفات
   Future<List<Map<String, dynamic>>> categories() async {
-    return await _db
+    final rows = await _client
         .from('categories')
-        .select('id, name_ar, slug, image_url')
+        .select()
         .eq('is_active', true)
         .order('sort_order');
+    return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// قائمة المنتجات مع أول صورة وأقل سعر متاح.
+  // ------------------------------------------------------------------ المنتجات
   Future<List<Map<String, dynamic>>> products({
     String? categoryId,
     String? search,
-    int limit = 20,
-    int offset = 0,
   }) async {
-    var query = _db
+    var query = _client
         .from('products')
-        .select(
-          'id, name_ar, base_price, compare_at_price, kind, '
-          'rating_avg, rating_count, product_images(url)',
-        )
+        .select('*, product_images(url, sort_order)')
         .eq('is_active', true);
 
     if (categoryId != null) query = query.eq('category_id', categoryId);
@@ -41,100 +38,146 @@ class StoreService {
       query = query.ilike('name_ar', '%${search.trim()}%');
     }
 
-    return await query.range(offset, offset + limit - 1);
+    final rows = await query.order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// المنتج كاملًا: خياراته ومتغيّراته وصوره في استدعاء واحد.
+  /// تفاصيل منتج كاملة عبر دالة قاعدة البيانات product_full
   Future<Product> product(String id) async {
-    final data = await _db.rpc('product_full', params: {'p_product_id': id});
-    if (data == null) throw Exception('المنتج غير موجود');
-    return Product.fromFullJson(Map<String, dynamic>.from(data as Map));
+    final data = await _client.rpc('product_full', params: {'p_product_id': id});
+    return Product.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  // ------------------------------------------------------------------ السلة
+  // ------------------------------------------------------------------- المفضلة
+  /// معرّفات المنتجات المحفوظة — لتلوين القلوب في الشبكات.
+  Future<Set<String>> favoriteIds() async {
+    final rows =
+        await _client.from('favorites').select('product_id').eq('user_id', _uid);
+    return rows.map((r) => r['product_id'] as String).toSet();
+  }
 
+  /// المفضلة كاملة مع بيانات منتجاتها — لشاشة المحفوظات.
+  Future<List<Map<String, dynamic>>> favorites() async {
+    final rows = await _client
+        .from('favorites')
+        .select('product_id, products(*, product_images(url, sort_order))')
+        .eq('user_id', _uid)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// إضافة/إزالة منتج من المفضلة.
+  Future<void> toggleFavorite(String productId) async {
+    final existing = await _client
+        .from('favorites')
+        .select('product_id')
+        .eq('user_id', _uid)
+        .eq('product_id', productId)
+        .maybeSingle();
+
+    if (existing == null) {
+      await _client
+          .from('favorites')
+          .insert({'user_id': _uid, 'product_id': productId});
+    } else {
+      await _client
+          .from('favorites')
+          .delete()
+          .eq('user_id', _uid)
+          .eq('product_id', productId);
+    }
+  }
+
+  // -------------------------------------------------------------------- السلة
   Future<List<Map<String, dynamic>>> cart() async {
-    return await _db.from('cart_items').select(
-          'id, quantity, '
-          'variants(id, price, stock_qty, image_url, '
-          'products(id, name_ar, base_price, kind), '
-          'variant_option_values(option_values(value_ar, option_types(name_ar))))',
-        );
+    final rows = await _client
+        .from('cart_items')
+        .select('''
+          id, quantity,
+          variants(
+            id, price, image_url, stock,
+            products(id, name_ar, base_price, kind),
+            variant_option_values(
+              option_values(value_ar, option_types(name_ar))
+            )
+          )
+        ''')
+        .eq('user_id', _uid)
+        .order('created_at');
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<void> addToCart(String variantId, {int quantity = 1}) async {
-    final userId = _db.auth.currentUser?.id;
-    if (userId == null) throw Exception('سجّل الدخول أولًا');
+    final existing = await _client
+        .from('cart_items')
+        .select('id, quantity')
+        .eq('user_id', _uid)
+        .eq('variant_id', variantId)
+        .maybeSingle();
 
-    // upsert يجمع الكمية إذا كان المتغيّر موجودًا في السلة
-    await _db.from('cart_items').upsert(
-      {'user_id': userId, 'variant_id': variantId, 'quantity': quantity},
-      onConflict: 'user_id,variant_id',
-    );
+    if (existing == null) {
+      await _client.from('cart_items').insert({
+        'user_id': _uid,
+        'variant_id': variantId,
+        'quantity': quantity,
+      });
+    } else {
+      await _client.from('cart_items').update({
+        'quantity': (existing['quantity'] as int) + quantity,
+      }).eq('id', existing['id'] as String);
+    }
   }
 
   Future<void> updateCartQuantity(String cartItemId, int quantity) async {
     if (quantity <= 0) {
-      await _db.from('cart_items').delete().eq('id', cartItemId);
-      return;
+      await _client.from('cart_items').delete().eq('id', cartItemId);
+    } else {
+      await _client
+          .from('cart_items')
+          .update({'quantity': quantity}).eq('id', cartItemId);
     }
-    await _db.from('cart_items').update({'quantity': quantity}).eq('id', cartItemId);
   }
 
-  // ----------------------------------------------------------------- الطلبات
+  // ------------------------------------------------------------------ العناوين
+  Future<List<Map<String, dynamic>>> addresses() async {
+    final rows = await _client
+        .from('addresses')
+        .select()
+        .eq('user_id', _uid)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
 
-  /// ينشئ الطلب داخل معاملة واحدة على الخادم (تحقّق مخزون + حساب + تفريغ سلة).
-  Future<String> placeOrder({
-    String? addressId,
-    required String payMethod,
-    String? notes,
-  }) async {
-    final orderId = await _db.rpc('place_order', params: {
+  // ------------------------------------------------------------------- الطلبات
+  Future<String> placeOrder({String? addressId, required String payMethod}) async {
+    final data = await _client.rpc('place_order', params: {
       'p_address_id': addressId,
       'p_pay_method': payMethod,
-      'p_notes': notes,
     });
-    return orderId as String;
+    return data as String;
   }
 
-  /// تُستدعى بعد تأكيد الدفع؛ ترسل الأكواد أو الملفات لبريد العميل.
   Future<void> fulfillDigital(String orderId) async {
-    await _db.functions.invoke(
-      'fulfill-digital-order',
-      body: {'order_id': orderId},
-    );
+    await _client.functions.invoke('fulfill-digital-order', body: {
+      'order_id': orderId,
+    });
   }
 
-  Future<List<Map<String, dynamic>>> orders({bool ongoing = true}) async {
-    final statuses = ongoing
-        ? ['pending', 'processing', 'shipped']
-        : ['delivered', 'cancelled', 'refunded'];
-
-    return await _db
+  Future<List<Map<String, dynamic>>> orders() async {
+    final rows = await _client
         .from('orders')
-        .select('*, order_items(*)')
-        .inFilter('status', statuses)
+        .select('*, order_items(quantity, unit_price, name_snapshot)')
+        .eq('user_id', _uid)
         .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
-  // -------------------------------------------------------- العناوين والمفضلة
-
-  Future<List<Map<String, dynamic>>> addresses() async {
-    return await _db.from('addresses').select().order('is_default', ascending: false);
-  }
-
-  Future<void> toggleFavorite(String productId, bool isFavorite) async {
-    final userId = _db.auth.currentUser?.id;
-    if (userId == null) throw Exception('سجّل الدخول أولًا');
-
-    if (isFavorite) {
-      await _db.from('favorites').insert({'user_id': userId, 'product_id': productId});
-    } else {
-      await _db
-          .from('favorites')
-          .delete()
-          .eq('user_id', userId)
-          .eq('product_id', productId);
-    }
+  Future<List<Map<String, dynamic>>> orderTracking(String orderId) async {
+    final rows = await _client
+        .from('order_tracking')
+        .select()
+        .eq('order_id', orderId)
+        .order('created_at');
+    return List<Map<String, dynamic>>.from(rows);
   }
 }
