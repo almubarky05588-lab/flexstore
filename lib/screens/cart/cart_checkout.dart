@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../services/store_service.dart';
 import '../../widgets/common.dart';
+import '../main_shell.dart' show activeTabNotifier;
 
 /// السلة — بطاقات المنتجات مع عدّاد الكمية وملخّص الحساب.
 class CartScreen extends StatefulWidget {
@@ -21,6 +22,18 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     _load();
+    activeTabNotifier.addListener(_onTabChanged);
+  }
+
+  @override
+  void dispose() {
+    activeTabNotifier.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    // السلة = تبويب 3: أعد التحميل كلما فُتح
+    if (activeTabNotifier.value == 3 && mounted) _load();
   }
 
   Future<void> _load() async {
