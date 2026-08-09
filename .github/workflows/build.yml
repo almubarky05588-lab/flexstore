@@ -51,6 +51,12 @@ jobs:
           cp -r /tmp/keep/lib /tmp/keep/assets .
           cp /tmp/keep/pubspec.yaml .
 
+      - name: Set Development Team in Xcode project
+        run: |
+          # نسخ Flutter الحديثة تتطلب DEVELOPMENT_TEAM حتى مع --no-codesign
+          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tDEVELOPMENT_TEAM = ${TEAM_ID};/g" ios/Runner.xcodeproj/project.pbxproj
+          grep -c "DEVELOPMENT_TEAM" ios/Runner.xcodeproj/project.pbxproj
+
       - name: Patch Info.plist
         run: |
           PL=ios/Runner/Info.plist
@@ -103,7 +109,7 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              # 1) الشهادة والبروفايل من الخزنة (أو إنشاؤها أول مرة)
+              # 1) الشهادة والبروفايل من الخزنة
               match(
                 type: "appstore",
                 app_identifier: ENV["BUNDLE_ID"],
@@ -116,17 +122,9 @@ jobs:
                 readonly: false
               )
 
-              # 2) الآن بعد توفر الشهادة: نخلي Flutter يبني التطبيق كاملًا
-              #    (يولّد كل ملفات البناء التي يحتاجها سكربت Xcode)
-              Dir.chdir("../..") do
-                sh("flutter build ios --release --no-codesign " \
-                   "--build-number=#{ENV['BUILD_NUMBER']} " \
-                   "--dart-define=SUPABASE_URL=#{ENV['SUPABASE_URL']} " \
-                   "--dart-define=SUPABASE_ANON_KEY=#{ENV['SUPABASE_ANON_KEY']}")
-              end
-
               profile_name = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][ENV["BUNDLE_ID"]]
 
+              # 2) ضبط الفريق والتوقيع في المشروع (قبل بناء Flutter — مطلوب لفحص Flutter الجديد)
               update_code_signing_settings(
                 use_automatic_signing: false,
                 path: "Runner.xcodeproj",
@@ -136,13 +134,20 @@ jobs:
                 profile_name: profile_name
               )
 
-              # 3) الأرشفة والتوقيع والرفع — يعيد استخدام بناء Flutter الجاهز
+              # 3) بناء Flutter الكامل (يولّد كل ملفات البيئة، والفريق مضبوط فينجح الفحص)
+              Dir.chdir("../..") do
+                sh("flutter build ios --release --no-codesign " \
+                   "--build-number=#{ENV['BUILD_NUMBER']} " \
+                   "--dart-define=SUPABASE_URL=#{ENV['SUPABASE_URL']} " \
+                   "--dart-define=SUPABASE_ANON_KEY=#{ENV['SUPABASE_ANON_KEY']}")
+              end
+
+              # 4) الأرشفة والتوقيع والرفع
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
                 configuration: "Release",
                 export_method: "app-store",
-                skip_build_archive: false,
                 skip_profile_detection: true,
                 export_options: {
                   provisioningProfiles: {
