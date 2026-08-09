@@ -17,6 +17,8 @@ jobs:
       TEAM_ID: ${{ secrets.TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
       FASTLANE_SKIP_UPDATE_CHECK: 1
       FASTLANE_HIDE_CHANGELOG: 1
 
@@ -107,40 +109,22 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              cert(
-                development: false,
-                api_key: api_key,
-                team_id: ENV["TEAM_ID"],
-                keychain_path: keychain_path,
-                keychain_password: keychain_pass
-              )
-
-              # ===== تصدير الشهادة لحفظها كسرّ (مرة واحدة) =====
-              begin
-                cert_path = lane_context[SharedValues::CERT_FILE_PATH]
-                UI.important("CERT_FILE: #{cert_path}")
-                identity = sh("security find-identity -v -p codesigning #{keychain_path} | head -2", log: false)
-                UI.important(identity)
-                p12_path = File.expand_path("export_cert.p12", Dir.pwd)
-                cert_name = sh(%Q(security find-identity -v -p codesigning #{keychain_path} | grep 'Apple Distribution' | head -1 | sed 's/.*"\\(.*\\)"/\\1/), log: false).strip
-                UI.important("exporting identity: #{cert_name}")
-                sh(%Q(security export -k #{keychain_path} -t identities -f pkcs12 -P "exportpass123" -o #{p12_path}))
-                b64 = sh("base64 -i #{p12_path} | tr -d '\\n'", log: false)
-                UI.important("========== COPY P12 BASE64 BELOW (save as secret CERT_P12_BASE64) ==========")
-                puts b64
-                UI.important("========== COPY P12 BASE64 ABOVE ==========")
-              rescue => e
-                UI.important("p12 export skipped: #{e.class} - #{e.message}")
-              end
-              # ================================================
-
-              sigh(
+              # الخزنة: ينشئ الشهادة أول مرة ويخزّنها في ios-certs،
+              # وكل بناء بعده يسحبها جاهزة بدل إنشاء جديدة.
+              match(
+                type: "appstore",
                 app_identifier: ENV["BUNDLE_ID"],
-                api_key: api_key,
                 team_id: ENV["TEAM_ID"],
-                development: false,
-                force: true
+                git_url: "https://x-access-token:#{ENV['MATCH_GIT_TOKEN']}@github.com/almubarky05588-lab/ios-certs.git",
+                storage_mode: "git",
+                api_key: api_key,
+                keychain_name: "build.keychain",
+                keychain_password: keychain_pass,
+                readonly: false
               )
+
+              profile_name = ENV["sigh_#{ENV['BUNDLE_ID']}_appstore_profile-name"] \
+                || lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][ENV["BUNDLE_ID"]]
 
               update_code_signing_settings(
                 use_automatic_signing: false,
@@ -148,7 +132,7 @@ jobs:
                 team_id: ENV["TEAM_ID"],
                 bundle_identifier: ENV["BUNDLE_ID"],
                 code_sign_identity: "Apple Distribution",
-                profile_name: lane_context[SharedValues::SIGH_NAME]
+                profile_name: profile_name
               )
 
               build_app(
@@ -159,7 +143,7 @@ jobs:
                 skip_profile_detection: true,
                 export_options: {
                   provisioningProfiles: {
-                    ENV["BUNDLE_ID"] => lane_context[SharedValues::SIGH_NAME]
+                    ENV["BUNDLE_ID"] => profile_name
                   }
                 }
               )
