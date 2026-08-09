@@ -27,14 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Select Xcode 26
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer 2>/dev/null \
-            || sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer 2>/dev/null \
-            || sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer 2>/dev/null \
-            || sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer 2>/dev/null \
-            || sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer 2>/dev/null \
-            || echo "using default Xcode"
+          ls /Applications | grep Xcode
+          LATEST=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "$LATEST/Contents/Developer"
+          fi
           xcodebuild -version
 
       - uses: subosito/flutter-action@v2
@@ -53,7 +52,6 @@ jobs:
 
       - name: Set Development Team in Xcode project
         run: |
-          # نسخ Flutter الحديثة تتطلب DEVELOPMENT_TEAM حتى مع --no-codesign
           sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tDEVELOPMENT_TEAM = ${TEAM_ID};/g" ios/Runner.xcodeproj/project.pbxproj
           grep -c "DEVELOPMENT_TEAM" ios/Runner.xcodeproj/project.pbxproj
 
@@ -109,7 +107,6 @@ jobs:
                 lock_when_sleeps: false
               )
 
-              # 1) الشهادة والبروفايل من الخزنة
               match(
                 type: "appstore",
                 app_identifier: ENV["BUNDLE_ID"],
@@ -124,7 +121,6 @@ jobs:
 
               profile_name = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][ENV["BUNDLE_ID"]]
 
-              # 2) ضبط الفريق والتوقيع في المشروع (قبل بناء Flutter — مطلوب لفحص Flutter الجديد)
               update_code_signing_settings(
                 use_automatic_signing: false,
                 path: "Runner.xcodeproj",
@@ -134,7 +130,6 @@ jobs:
                 profile_name: profile_name
               )
 
-              # 3) بناء Flutter الكامل (يولّد كل ملفات البيئة، والفريق مضبوط فينجح الفحص)
               Dir.chdir("../..") do
                 sh("flutter build ios --release --no-codesign " \
                    "--build-number=#{ENV['BUILD_NUMBER']} " \
@@ -142,7 +137,6 @@ jobs:
                    "--dart-define=SUPABASE_ANON_KEY=#{ENV['SUPABASE_ANON_KEY']}")
               end
 
-              # 4) الأرشفة والتوقيع والرفع
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
