@@ -13,6 +13,16 @@ class StoreService {
     return rows.isEmpty ? {} : rows.first;
   }
 
+  /// وضع المتجر: يرجع معرّف القسم المخصص إن كان المتجر مخصصًا لقسم واحد،
+  /// أو null إن كان شاملًا لكل الأقسام.
+  Future<String?> singleCategoryId() async {
+    final s = await storeSettings();
+    if (s['store_mode'] == 'single_category') {
+      return s['single_category_id'] as String?;
+    }
+    return null;
+  }
+
   // ------------------------------------------------------------------- البنرات
   Future<List<Map<String, dynamic>>> promoBanners() async {
     final rows = await _client
@@ -183,7 +193,6 @@ class StoreService {
   }
 
   // ------------------------------------------------------------ بطاقات الدفع
-  /// البطاقات المحفوظة (عرض فقط: آخر 4 أرقام والعلامة والانتهاء).
   Future<List<Map<String, dynamic>>> paymentCards() async {
     final rows = await _client
         .from('payment_cards')
