@@ -4,6 +4,7 @@ import '../screens/main_shell.dart';
 import '../screens/auth/auth_screens.dart';
 import '../screens/shop/home_screen.dart';
 import '../screens/shop/product_details.dart';
+import '../screens/shop/product_list_screen.dart';
 import '../screens/cart/cart_checkout.dart';
 import '../screens/orders/orders_screens.dart';
 import '../screens/account/account_screens.dart';
@@ -27,6 +28,7 @@ final appRoutes = <String, WidgetBuilder>{
   '/search':      (_) => const SearchScreen(),
   '/saved':       (_) => const SavedItemsScreen(),
   '/product':     (_) => const ProductDetailsScreen(),
+  '/products':    (_) => const ProductListScreen(),
   '/reviews':     (_) => const ReviewsScreen(),
 
   // السلة والشراء
