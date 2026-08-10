@@ -13,8 +13,6 @@ class StoreService {
     return rows.isEmpty ? {} : rows.first;
   }
 
-  /// وضع المتجر: يرجع معرّف القسم المخصص إن كان المتجر مخصصًا لقسم واحد،
-  /// أو null إن كان شاملًا لكل الأقسام.
   Future<String?> singleCategoryId() async {
     final s = await storeSettings();
     if (s['store_mode'] == 'single_category') {
@@ -43,11 +41,24 @@ class StoreService {
   }
 
   // ----------------------------------------------------------------- التصنيفات
+  /// الأقسام الرئيسية فقط (بلا تصنيفات فرعية).
   Future<List<Map<String, dynamic>>> categories() async {
     final rows = await _client
         .from('categories')
         .select()
         .eq('is_active', true)
+        .isFilter('parent_id', null)
+        .order('sort_order');
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// التصنيفات الفرعية داخل قسم معيّن (بطاقات دائرية/مربعة بصور).
+  Future<List<Map<String, dynamic>>> subcategories(String parentId) async {
+    final rows = await _client
+        .from('categories')
+        .select()
+        .eq('is_active', true)
+        .eq('parent_id', parentId)
         .order('sort_order');
     return List<Map<String, dynamic>>.from(rows);
   }
@@ -202,7 +213,6 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// حفظ بطاقة — لا يُخزَّن الرقم الكامل ولا رمز التحقق إطلاقًا.
   Future<void> addPaymentCard({
     required String last4,
     required String brand,
