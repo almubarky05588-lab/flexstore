@@ -6,9 +6,7 @@ import '../../widgets/common.dart';
 import '../../widgets/option_selector.dart';
 import '../../widgets/app_icons.dart';
 
-/// تفاصيل المنتج — الشاشة التي يظهر فيها النظام المرن بوضوح:
-/// تعرض "اختر المقاس" للملابس و"اختر الحجم" للعطور بنفس الكود تمامًا،
-/// ولا تعرض أي خيارات للمنتجات الرقمية.
+/// تفاصيل المنتج — الشاشة التي يظهر فيها النظام المرن بوضوح.
 class ProductDetailsScreen extends StatefulWidget {
   const ProductDetailsScreen({super.key});
 
@@ -36,10 +34,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   Future<void> _load(String id) async {
     try {
-      final p = await _service.product(id);
+      final results = await Future.wait([
+        _service.product(id),
+        _service.favoriteIds(),
+      ]);
+      final p = results[0] as Product;
+      final favs = results[1] as Set<String>;
       if (!mounted) return;
       setState(() {
         _product = p;
+        _favorite = favs.contains(id);
         for (final t in p.optionTypes) {
           final first = t.values.firstWhere(
             (v) => p.isValueAvailable(v.id, {}),
@@ -56,6 +60,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   Variant? get _variant => _product?.matchVariant(_selected.values.toSet());
 
   double get _price => _variant?.price ?? _product?.basePrice ?? 0;
+
+  Future<void> _toggleFavorite() async {
+    final p = _product;
+    if (p == null) return;
+    setState(() => _favorite = !_favorite);
+    try {
+      await _service.toggleFavorite(p.id);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _favorite = !_favorite);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذّر حفظ المفضلة، حاول مجددًا'),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   Future<void> _addToCart() async {
     final v = _variant;
@@ -126,7 +149,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     Positioned(
                       top: 16, left: 16,
                       child: GestureDetector(
-                        onTap: () => setState(() => _favorite = !_favorite),
+                        onTap: _toggleFavorite,
                         child: Container(
                           padding: const EdgeInsets.all(11.294),
                           decoration: BoxDecoration(
@@ -195,7 +218,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     }),
                   ),
 
-                  // ★ محدّد الكمية ★ — يظهر لكل المنتجات ما عدا الرقمية
+                  // محدّد الكمية — يظهر لكل المنتجات ما عدا الرقمية
                   if (!p.isDigital && !outOfStock) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Row(
@@ -282,7 +305,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 }
 
-/// محدّد الكمية — زرّان مربّعان (+ / −) ورقم بينهما، بنفس نمط السلة.
+/// محدّد الكمية — زرّان مربّعان (+ / −) ورقم بينهما.
 class _QtyStepper extends StatelessWidget {
   final int quantity;
   final int max;
