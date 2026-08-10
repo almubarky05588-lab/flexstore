@@ -435,7 +435,7 @@ class _CategoryBannerCard extends StatelessWidget {
                     ),
                     child: Text(
                       banner['title_ar'] as String,
-                      style: AppText.b2SemiBold,
+                      style: AppText.b1SemiBold,
                     ),
                   ),
                 ),
