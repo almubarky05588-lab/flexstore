@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../services/store_service.dart';
@@ -5,7 +6,7 @@ import '../../widgets/common.dart';
 import '../../widgets/app_icons.dart';
 import '../main_shell.dart' show activeTabNotifier;
 
-/// الرئيسية "اكتشف" — بحث + فلتر + حبّات التصنيفات + شبكة منتجات عمودين.
+/// الرئيسية "اكتشف" — بنر متحرك + بنرات أقسام + تصنيفات + شبكة منتجات.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,6 +18,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final _service = StoreService();
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> _promoBanners = [];
+  List<Map<String, dynamic>> _categoryBanners = [];
   Set<String> _favoriteIds = {};
   String? _selectedCategory;
   bool _loading = true;
@@ -35,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onTabChanged() {
-    // الرئيسية = تبويب 0: نحدّث المفضلة عند الرجوع لها لتلوين القلوب صح
     if (activeTabNotifier.value == 0 && mounted) _loadFavorites();
   }
 
@@ -46,12 +48,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _service.categories(),
         _service.products(categoryId: _selectedCategory),
         _service.favoriteIds(),
+        _service.promoBanners(),
+        _service.categoryBanners(),
       ]);
       if (!mounted) return;
       setState(() {
         _categories = results[0] as List<Map<String, dynamic>>;
         _products = results[1] as List<Map<String, dynamic>>;
         _favoriteIds = results[2] as Set<String>;
+        _promoBanners = results[3] as List<Map<String, dynamic>>;
+        _categoryBanners = results[4] as List<Map<String, dynamic>>;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -65,7 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _toggleFavorite(String productId) async {
-    // تحديث فوري في الواجهة ثم الحفظ في القاعدة
     setState(() {
       if (_favoriteIds.contains(productId)) {
         _favoriteIds.remove(productId);
@@ -76,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _service.toggleFavorite(productId);
     } catch (_) {
-      // فشل الحفظ: نرجع الحالة ونبلّغ
       if (!mounted) return;
       setState(() {
         if (_favoriteIds.contains(productId)) {
@@ -85,13 +89,14 @@ class _HomeScreenState extends State<HomeScreen> {
           _favoriteIds.add(productId);
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذّر حفظ المفضلة، حاول مجددًا'),
-          backgroundColor: AppColors.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    }
+  }
+
+  void _onCategoryBannerTap(Map<String, dynamic> banner) {
+    final categoryId = banner['category_id'] as String?;
+    if (categoryId != null) {
+      setState(() => _selectedCategory = categoryId);
+      _load();
     }
   }
 
@@ -100,126 +105,184 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // "اكتشف" على اليمين والجرس على اليسار
-            Padding(
-              padding: const EdgeInsets.fromLTRB(25, 12, 25, 0),
-              child: Row(
-                textDirection: TextDirection.rtl,
-                children: [
-                  Text('اكتشف', style: AppText.h3SemiBold),
-                  const Spacer(),
-                  const _NotificationBell(),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // شريط البحث + زر الفلاتر
-            Padding(
-              padding: AppSpacing.screenPadding,
-              child: Row(
-                textDirection: TextDirection.rtl,
-                children: [
-                  Expanded(
-                    child: SearchField(
-                      readOnly: true,
-                      onTap: () => Navigator.of(context).pushNamed('/search'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  GestureDetector(
-                    onTap: () => _openFilters(context),
-                    child: Container(
-                      width: 52, height: 52,
-                      decoration: BoxDecoration(
-                        gradient: kAccentGradient,
-                        borderRadius: BorderRadius.circular(AppRadius.base),
-                        boxShadow: const [kAccentShadow],
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    // "اكتشف" يمين + الجرس يسار
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(25, 12, 25, 0),
+                      child: Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          Text('اكتشف', style: AppText.h3SemiBold),
+                          const Spacer(),
+                          const _NotificationBell(),
+                        ],
                       ),
-                      child: Center(child: AppIcon.filter(color: AppColors.white)),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.lg),
 
-            // حبّات التصنيفات — تمرير أفقي يبدأ من اليمين
-            SizedBox(
-              height: 54,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                reverse: true,
-                padding: AppSpacing.screenPadding,
-                children: [
-                  CategoryChip(
-                    label: 'الكل',
-                    selected: _selectedCategory == null,
-                    onTap: () {
-                      setState(() => _selectedCategory = null);
-                      _load();
-                    },
-                  ),
-                  for (final c in _categories) ...[
-                    const SizedBox(width: AppSpacing.md),
-                    CategoryChip(
-                      label: c['name_ar'] as String,
-                      selected: _selectedCategory == c['id'],
-                      onTap: () {
-                        setState(() => _selectedCategory = c['id'] as String);
-                        _load();
-                      },
+                    // البحث + الفلاتر
+                    Padding(
+                      padding: AppSpacing.screenPadding,
+                      child: Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          Expanded(
+                            child: SearchField(
+                              readOnly: true,
+                              onTap: () =>
+                                  Navigator.of(context).pushNamed('/search'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          GestureDetector(
+                            onTap: () => _openFilters(context),
+                            child: Container(
+                              width: 52, height: 52,
+                              decoration: BoxDecoration(
+                                gradient: kAccentGradient,
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.base),
+                                boxShadow: const [kAccentShadow],
+                              ),
+                              child: Center(
+                                  child:
+                                      AppIcon.filter(color: AppColors.white)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // ★ البنر الإعلاني المتحرك ★
+                    if (_promoBanners.isNotEmpty) ...[
+                      _PromoCarousel(banners: _promoBanners),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+
+                    // التصنيفات — من اليمين لليسار
+                    SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        reverse: true,
+                        padding: AppSpacing.screenPadding,
+                        children: [
+                          _smallChip('الكل', _selectedCategory == null, () {
+                            setState(() => _selectedCategory = null);
+                            _load();
+                          }),
+                          for (final c in _categories) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            _smallChip(
+                              c['name_ar'] as String,
+                              _selectedCategory == c['id'],
+                              () {
+                                setState(() =>
+                                    _selectedCategory = c['id'] as String);
+                                _load();
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // ★ بنرات الأقسام — بطاقات تحت بعض ★
+                    if (_categoryBanners.isNotEmpty) ...[
+                      Padding(
+                        padding: AppSpacing.screenPadding,
+                        child: Column(
+                          children: [
+                            for (final b in _categoryBanners) ...[
+                              _CategoryBannerCard(
+                                banner: b,
+                                onTap: () => _onCategoryBannerTap(b),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+
+                    // شبكة المنتجات — بطاقات أصغر وأنعم
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(25, 0, 25, 24),
+                      child: _products.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 40),
+                              child: EmptyState(
+                                icon: Icons.inventory_2_outlined,
+                                title: 'لا توجد منتجات!',
+                                message: 'ما فيه منتجات في هذا التصنيف حاليًا.',
+                              ),
+                            )
+                          : GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 161 / 210,
+                              ),
+                              itemCount: _products.length,
+                              itemBuilder: (_, i) {
+                                final p = _products[i];
+                                final images =
+                                    (p['product_images'] as List?) ?? [];
+                                final id = p['id'] as String;
+                                return ProductGridCard(
+                                  name: p['name_ar'] as String,
+                                  price: p['base_price'] as num,
+                                  compareAt: p['compare_at_price'] as num?,
+                                  imageUrl: images.isEmpty
+                                      ? null
+                                      : images.first['url'] as String,
+                                  isFavorite: _favoriteIds.contains(id),
+                                  onFavorite: () => _toggleFavorite(id),
+                                  onTap: () => Navigator.of(context)
+                                      .pushNamed('/product', arguments: id),
+                                );
+                              },
+                            ),
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
+      ),
+    );
+  }
 
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _products.isEmpty
-                      ? const EmptyState(
-                          icon: Icons.inventory_2_outlined,
-                          title: 'لا توجد منتجات!',
-                          message: 'ما فيه منتجات في هذا التصنيف حاليًا.')
-                      : RefreshIndicator(
-                          onRefresh: _load,
-                          child: GridView.builder(
-                            padding: const EdgeInsets.fromLTRB(25, 0, 25, 24),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 17,
-                              mainAxisSpacing: 20,
-                              childAspectRatio: 161 / 232,
-                            ),
-                            itemCount: _products.length,
-                            itemBuilder: (_, i) {
-                              final p = _products[i];
-                              final images = (p['product_images'] as List?) ?? [];
-                              final id = p['id'] as String;
-                              return ProductGridCard(
-                                name: p['name_ar'] as String,
-                                price: p['base_price'] as num,
-                                compareAt: p['compare_at_price'] as num?,
-                                imageUrl: images.isEmpty
-                                    ? null
-                                    : images.first['url'] as String,
-                                isFavorite: _favoriteIds.contains(id),
-                                onFavorite: () => _toggleFavorite(id),
-                                onTap: () => Navigator.of(context)
-                                    .pushNamed('/product', arguments: id),
-                              );
-                            },
-                          ),
-                        ),
-            ),
-          ],
+  Widget _smallChip(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? null : AppColors.white,
+          gradient: selected ? kAccentGradient : null,
+          borderRadius: BorderRadius.circular(AppRadius.base),
+          border:
+              Border.all(color: selected ? Colors.transparent : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: AppText.b2Medium.copyWith(
+            color: selected ? AppColors.white : AppColors.ink,
+          ),
         ),
       ),
     );
@@ -231,6 +294,155 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const FiltersSheet(),
+    );
+  }
+}
+
+/// الكاروسيل الإعلاني — يتنقّل تلقائيًا كل 4 ثوانٍ مع نقاط تتبّع.
+class _PromoCarousel extends StatefulWidget {
+  final List<Map<String, dynamic>> banners;
+  const _PromoCarousel({required this.banners});
+
+  @override
+  State<_PromoCarousel> createState() => _PromoCarouselState();
+}
+
+class _PromoCarouselState extends State<_PromoCarousel> {
+  final _controller = PageController();
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.banners.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!mounted || !_controller.hasClients) return;
+        final next = (_page + 1) % widget.banners.length;
+        _controller.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 150,
+          child: PageView.builder(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemCount: widget.banners.length,
+            itemBuilder: (_, i) {
+              final b = widget.banners[i];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 25),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.base),
+                  child: Container(
+                    color: AppColors.surface,
+                    child: Image.network(
+                      b['image_url'] as String,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Text(
+                          b['title_ar'] as String? ?? '',
+                          style: AppText.b1SemiBold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (widget.banners.length > 1) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < widget.banners.length; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: _page == i ? 18 : 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color: _page == i ? AppColors.accent : AppColors.line,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// بطاقة بنر قسم — ارتفاع معتدل وغير مزعج.
+class _CategoryBannerCard extends StatelessWidget {
+  final Map<String, dynamic> banner;
+  final VoidCallback onTap;
+
+  const _CategoryBannerCard({required this.banner, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.base),
+        child: SizedBox(
+          height: 110,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(
+                color: AppColors.surface,
+                child: Image.network(
+                  banner['image_url'] as String,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(),
+                ),
+              ),
+              if (banner['title_ar'] != null)
+                Positioned(
+                  right: 16,
+                  bottom: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.white.withValues(alpha: 0.9),
+                      borderRadius:
+                          BorderRadius.circular(AppRadius.heartSmall),
+                    ),
+                    child: Text(
+                      banner['title_ar'] as String,
+                      style: AppText.b2SemiBold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -530,7 +742,7 @@ class _ResultRow extends StatelessWidget {
 }
 
 // ================================================================= المحفوظات
-/// شاشة المحفوظات الحقيقية — تجلب المفضلة من القاعدة وتعيد التحميل عند فتح تبويبها.
+/// شاشة المحفوظات — تجلب المفضلة من القاعدة وتعيد التحميل عند فتح تبويبها.
 class SavedItemsScreen extends StatefulWidget {
   const SavedItemsScreen({super.key});
 
@@ -557,7 +769,6 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
   }
 
   void _onTabChanged() {
-    // المحفوظات = تبويب 2: أعد التحميل كلما فُتح
     if (activeTabNotifier.value == 2 && mounted) _load();
   }
 
@@ -596,9 +807,9 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      crossAxisSpacing: 17,
-                      mainAxisSpacing: 20,
-                      childAspectRatio: 161 / 232,
+                      crossAxisSpacing: 14,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 161 / 210,
                     ),
                     itemCount: _items.length,
                     itemBuilder: (_, i) {
