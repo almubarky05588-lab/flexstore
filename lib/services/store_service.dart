@@ -14,7 +14,6 @@ class StoreService {
   }
 
   // ------------------------------------------------------------------- البنرات
-  /// البنرات الإعلانية المتحركة أعلى الرئيسية.
   Future<List<Map<String, dynamic>>> promoBanners() async {
     final rows = await _client
         .from('promo_banners')
@@ -24,7 +23,6 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// بنرات الأقسام — بطاقات تحت بعض في الرئيسية.
   Future<List<Map<String, dynamic>>> categoryBanners() async {
     final rows = await _client
         .from('category_banners')
@@ -63,21 +61,18 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// تفاصيل منتج كاملة عبر دالة قاعدة البيانات product_full
   Future<Product> product(String id) async {
     final data = await _client.rpc('product_full', params: {'p_product_id': id});
     return Product.fromFullJson(Map<String, dynamic>.from(data as Map));
   }
 
   // ------------------------------------------------------------------- المفضلة
-  /// معرّفات المنتجات المحفوظة — لتلوين القلوب في الشبكات.
   Future<Set<String>> favoriteIds() async {
     final rows =
         await _client.from('favorites').select('product_id').eq('user_id', _uid);
     return rows.map((r) => r['product_id'] as String).toSet();
   }
 
-  /// المفضلة كاملة مع بيانات منتجاتها — لشاشة المحفوظات.
   Future<List<Map<String, dynamic>>> favorites() async {
     final rows = await _client
         .from('favorites')
@@ -87,7 +82,6 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// إضافة/إزالة منتج من المفضلة.
   Future<void> toggleFavorite(String productId) async {
     final existing = await _client
         .from('favorites')
@@ -169,6 +163,27 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// إضافة عنوان جديد لدفتر العناوين.
+  Future<void> addAddress({
+    required String label,
+    required String fullText,
+    String? city,
+    bool isDefault = false,
+  }) async {
+    await _client.from('addresses').insert({
+      'user_id': _uid,
+      'label': label,
+      'full_text': fullText,
+      if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
+      'is_default': isDefault,
+    });
+  }
+
+  /// حذف عنوان.
+  Future<void> deleteAddress(String addressId) async {
+    await _client.from('addresses').delete().eq('id', addressId);
+  }
+
   // ------------------------------------------------------------------- الطلبات
   Future<String> placeOrder({String? addressId, required String payMethod}) async {
     final data = await _client.rpc('place_order', params: {
@@ -184,7 +199,6 @@ class StoreService {
     });
   }
 
-  /// الطلبات: الجارية (قيد التجهيز/الشحن) أو المكتملة/الملغاة.
   Future<List<Map<String, dynamic>>> orders({bool ongoing = true}) async {
     final statuses = ongoing
         ? ['pending', 'processing', 'shipped']
