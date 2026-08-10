@@ -6,8 +6,9 @@ import '../../widgets/common.dart';
 import '../../widgets/app_icons.dart';
 import '../main_shell.dart' show activeTabNotifier;
 
-/// الرئيسية "اكتشف" — بنر متحرك + بنرات أقسام + تصنيفات + شبكة منتجات.
-/// تحترم وضع المتجر: لو مخصص لقسم واحد، تعرض منتجاته فقط بلا شريط تصنيفات.
+/// الرئيسية "اكتشف".
+/// وضع شامل: شريط الأقسام الرئيسية.
+/// وضع قسم واحد: تصنيفات ذلك القسم (بطاقات/نصوص) مكان شريط الأقسام.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -18,12 +19,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _service = StoreService();
   List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _subcategories = [];
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _promoBanners = [];
   List<Map<String, dynamic>> _categoryBanners = [];
   Set<String> _favoriteIds = {};
   String? _selectedCategory;
-  String? _lockedCategory; // القسم المفروض من وضع المتجر
+  String? _selectedSub;
+  String? _lockedCategory;
   bool _loading = true;
 
   bool get _isSingleMode => _lockedCategory != null;
@@ -48,13 +51,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      // وضع المتجر أولًا — يحدد أي منتجات نعرض
       final locked = await _service.singleCategoryId();
-      final effectiveCategory = locked ?? _selectedCategory;
+
+      // في وضع القسم الواحد: نعرض تصنيفاته، وننتقي منتجات التصنيف المختار أو القسم كله
+      final subs = locked != null ? await _service.subcategories(locked) : <Map<String, dynamic>>[];
+      final target = _selectedSub ?? locked ?? _selectedCategory;
 
       final results = await Future.wait([
         _service.categories(),
-        _service.products(categoryId: effectiveCategory),
+        _service.products(categoryId: target),
         _service.favoriteIds(),
         _service.promoBanners(),
         _service.categoryBanners(),
@@ -62,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _lockedCategory = locked;
+        _subcategories = subs;
         _categories = results[0] as List<Map<String, dynamic>>;
         _products = results[1] as List<Map<String, dynamic>>;
         _favoriteIds = results[2] as Set<String>;
@@ -101,8 +107,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _selectSub(String? id) {
+    setState(() => _selectedSub = id);
+    _load();
+  }
+
   void _onCategoryBannerTap(Map<String, dynamic> banner) {
-    if (_isSingleMode) return; // بلا تنقّل بين الأقسام في المتجر المخصص
+    if (_isSingleMode) return;
     final categoryId = banner['category_id'] as String?;
     if (categoryId != null) {
       setState(() => _selectedCategory = categoryId);
@@ -112,6 +123,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final textSubs = _subcategories
+        .where((s) => (s['shape'] as String? ?? 'circle') == 'text')
+        .toList();
+    final cardSubs = _subcategories
+        .where((s) => (s['shape'] as String? ?? 'circle') != 'text')
+        .toList();
+
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -122,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    // "اكتشف" يمين + الجرس يسار
                     Padding(
                       padding: const EdgeInsets.fromLTRB(25, 12, 25, 0),
                       child: Row(
@@ -136,7 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
 
-                    // البحث + الفلاتر
                     Padding(
                       padding: AppSpacing.screenPadding,
                       child: Row(
@@ -170,13 +186,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
 
-                    // البنر الإعلاني المتحرك
                     if (_promoBanners.isNotEmpty) ...[
                       _PromoCarousel(banners: _promoBanners),
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // شريط التصنيفات — يُخفى في وضع القسم الواحد
+                    // وضع شامل: شريط الأقسام الرئيسية
                     if (!_isSingleMode) ...[
                       SizedBox(
                         height: 44,
@@ -207,7 +222,45 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // بنرات الأقسام
+                    // ★ وضع القسم الواحد: تصنيفات القسم مكان شريط الأقسام ★
+                    if (_isSingleMode && _subcategories.isNotEmpty) ...[
+                      if (textSubs.isNotEmpty) ...[
+                        SizedBox(
+                          height: 44,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            reverse: true,
+                            padding: AppSpacing.screenPadding,
+                            children: [
+                              _smallChip('الكل', _selectedSub == null,
+                                  () => _selectSub(null)),
+                              for (final s in textSubs) ...[
+                                const SizedBox(width: AppSpacing.sm),
+                                _smallChip(
+                                  s['name_ar'] as String,
+                                  _selectedSub == s['id'],
+                                  () => _selectSub(s['id'] as String),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
+                      if (cardSubs.isNotEmpty) ...[
+                        Padding(
+                          padding: AppSpacing.screenPadding,
+                          child: _SubcategoryRow(
+                            items: cardSubs,
+                            selectedId: _selectedSub,
+                            onSelect: _selectSub,
+                            showAllTile: textSubs.isEmpty,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                    ],
+
                     if (_categoryBanners.isNotEmpty) ...[
                       Padding(
                         padding: AppSpacing.screenPadding,
@@ -226,7 +279,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.sm),
                     ],
 
-                    // شبكة المنتجات
                     Padding(
                       padding: const EdgeInsets.fromLTRB(25, 0, 25, 24),
                       child: _products.isEmpty
@@ -235,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: EmptyState(
                                 icon: Icons.inventory_2_outlined,
                                 title: 'لا توجد منتجات!',
-                                message: 'ما فيه منتجات في هذا التصنيف حاليًا.',
+                                message: 'ما فيه منتجات هنا حاليًا.',
                               ),
                             )
                           : GridView.builder(
@@ -310,7 +362,123 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// الكاروسيل الإعلاني — يتنقّل تلقائيًا كل 4 ثوانٍ مع نقاط تتبّع.
+/// صف أفقي لبطاقات التصنيفات (دائرية/مربعة) بالصور.
+class _SubcategoryRow extends StatelessWidget {
+  final List<Map<String, dynamic>> items;
+  final String? selectedId;
+  final ValueChanged<String?> onSelect;
+  final bool showAllTile;
+
+  const _SubcategoryRow({
+    required this.items,
+    required this.selectedId,
+    required this.onSelect,
+    this.showAllTile = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 106,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        padding: EdgeInsets.zero,
+        children: [
+          if (showAllTile) ...[
+            _tile(
+              label: 'الكل',
+              imageUrl: null,
+              circle: true,
+              selected: selectedId == null,
+              onTap: () => onSelect(null),
+            ),
+            const SizedBox(width: 12),
+          ],
+          for (final s in items) ...[
+            _tile(
+              label: s['name_ar'] as String,
+              imageUrl: s['image_url'] as String?,
+              circle: (s['shape'] as String? ?? 'circle') == 'circle',
+              selected: selectedId == s['id'],
+              onTap: () => onSelect(s['id'] as String),
+            ),
+            const SizedBox(width: 12),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _tile({
+    required String label,
+    required String? imageUrl,
+    required bool circle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    const size = 72.0;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: size,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: size,
+              height: size,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: circle ? BoxShape.circle : BoxShape.rectangle,
+                borderRadius:
+                    circle ? null : BorderRadius.circular(AppRadius.base),
+                border: Border.all(
+                  color: selected ? AppColors.accent : AppColors.line,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: circle
+                    ? BorderRadius.circular(size)
+                    : BorderRadius.circular(AppRadius.heartSmall),
+                child: Container(
+                  color: AppColors.surface,
+                  child: imageUrl == null
+                      ? const Center(
+                          child:
+                              Icon(Icons.apps, size: 24, color: AppColors.body))
+                      : Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.image_outlined,
+                                size: 20, color: AppColors.body),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.b3Medium.copyWith(
+                color: selected ? AppColors.ink : AppColors.body,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// الكاروسيل الإعلاني — يتنقّل تلقائيًا كل 4 ثوانٍ.
 class _PromoCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> banners;
   const _PromoCarousel({required this.banners});
@@ -331,11 +499,9 @@ class _PromoCarouselState extends State<_PromoCarousel> {
       _timer = Timer.periodic(const Duration(seconds: 4), (_) {
         if (!mounted || !_controller.hasClients) return;
         final next = (_page + 1) % widget.banners.length;
-        _controller.animateToPage(
-          next,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-        );
+        _controller.animateToPage(next,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut);
       });
     }
   }
@@ -370,10 +536,8 @@ class _PromoCarouselState extends State<_PromoCarousel> {
                       fit: BoxFit.cover,
                       width: double.infinity,
                       errorBuilder: (_, __, ___) => Center(
-                        child: Text(
-                          b['title_ar'] as String? ?? '',
-                          style: AppText.b1SemiBold,
-                        ),
+                        child: Text(b['title_ar'] as String? ?? '',
+                            style: AppText.b1SemiBold),
                       ),
                     ),
                   ),
@@ -406,7 +570,6 @@ class _PromoCarouselState extends State<_PromoCarousel> {
   }
 }
 
-/// بطاقة بنر قسم — ارتفاع معتدل وغير مزعج.
 class _CategoryBannerCard extends StatelessWidget {
   final Map<String, dynamic> banner;
   final VoidCallback onTap;
@@ -438,17 +601,14 @@ class _CategoryBannerCard extends StatelessWidget {
                   right: 16,
                   bottom: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: AppColors.white.withValues(alpha: 0.9),
-                      borderRadius:
-                          BorderRadius.circular(AppRadius.heartSmall),
+                      borderRadius: BorderRadius.circular(AppRadius.heartSmall),
                     ),
-                    child: Text(
-                      banner['title_ar'] as String,
-                      style: AppText.b1SemiBold,
-                    ),
+                    child: Text(banner['title_ar'] as String,
+                        style: AppText.b1SemiBold),
                   ),
                 ),
             ],
@@ -523,7 +683,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
-
             Row(
               textDirection: TextDirection.rtl,
               children: [
@@ -538,7 +697,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
             const SizedBox(height: AppSpacing.lg),
             const Divider(),
             const SizedBox(height: AppSpacing.lg),
-
             Align(
               alignment: Alignment.centerRight,
               child: Text('نطاق السعر', style: AppText.b1SemiBold),
@@ -555,7 +713,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
               onChanged: (v) => setState(() => _price = v),
             ),
             const SizedBox(height: AppSpacing.lg),
-
             Align(
               alignment: Alignment.centerRight,
               child: Text('الترتيب حسب', style: AppText.b1SemiBold),
@@ -576,7 +733,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
                     .toList(),
               ),
             ),
-
             const SizedBox(height: 32),
             PrimaryButton(
                 label: 'تطبيق الفلاتر', onPressed: () => Navigator.pop(context)),
@@ -627,7 +783,6 @@ class _SearchScreenState extends State<SearchScreen> {
               child: SearchField(controller: _controller, onChanged: _search),
             ),
             const SizedBox(height: AppSpacing.xl),
-
             Expanded(
               child: !_searched
                   ? _recentSearches()
