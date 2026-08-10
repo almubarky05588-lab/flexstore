@@ -13,6 +13,27 @@ class StoreService {
     return rows.isEmpty ? {} : rows.first;
   }
 
+  // ------------------------------------------------------------------- البنرات
+  /// البنرات الإعلانية المتحركة أعلى الرئيسية.
+  Future<List<Map<String, dynamic>>> promoBanners() async {
+    final rows = await _client
+        .from('promo_banners')
+        .select()
+        .eq('is_active', true)
+        .order('sort_order');
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// بنرات الأقسام — بطاقات تحت بعض في الرئيسية.
+  Future<List<Map<String, dynamic>>> categoryBanners() async {
+    final rows = await _client
+        .from('category_banners')
+        .select()
+        .eq('is_active', true)
+        .order('sort_order');
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
   // ----------------------------------------------------------------- التصنيفات
   Future<List<Map<String, dynamic>>> categories() async {
     final rows = await _client
