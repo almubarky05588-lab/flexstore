@@ -96,7 +96,7 @@ class _BellButton extends StatelessWidget {
                   width: 9,
                   height: 9,
                   decoration: const BoxDecoration(
-                    color: AppColors.accent,
+                    color: AppColors.alert,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -180,6 +180,7 @@ class CategoryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -228,70 +229,90 @@ class ProductGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AspectRatio(
-            aspectRatio: 161 / 174,
-            child: Stack(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.base),
-                    image: imageUrl == null
-                        ? null
-                        : DecorationImage(
-                            image: NetworkImage(imageUrl!), fit: BoxFit.cover),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AspectRatio(
+          aspectRatio: 161 / 174,
+          child: Stack(
+            children: [
+              // الصورة قابلة للضغط لفتح المنتج
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: onTap,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(AppRadius.base),
+                      image: imageUrl == null
+                          ? null
+                          : DecorationImage(
+                              image: NetworkImage(imageUrl!), fit: BoxFit.cover),
+                    ),
                   ),
                 ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: GestureDetector(
-                    onTap: onFavorite,
+              ),
+              // القلب فوق الصورة — منطقة لمس واسعة ومستقلة
+              Positioned(
+                top: 4,
+                left: 4,
+                child: GestureDetector(
+                  onTap: onFavorite,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: AppColors.white,
-                        borderRadius: BorderRadius.circular(AppRadius.heartSmall),
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.heartSmall),
                         boxShadow: const [kHeartShadow],
                       ),
                       child: AppIcon.heart(
                         size: 18,
-                        color: isFavorite ? AppColors.accent : AppColors.ink,
+                        color: isFavorite ? AppColors.alert : AppColors.ink,
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.right,
-            style: AppText.b1SemiBold.copyWith(color: AppColors.ink),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              if (_discount > 0) ...[
-                Text('-$_discount%',
-                    style: AppText.b3Medium.copyWith(color: AppColors.accent)),
-                const SizedBox(width: AppSpacing.sm),
-              ],
-              Text(formatPrice(price),
-                  style: AppText.b3Medium.copyWith(color: AppColors.accent)),
+              ),
             ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppText.b1SemiBold.copyWith(color: AppColors.ink),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_discount > 0) ...[
+                    Text('-$_discount%',
+                        style:
+                            AppText.b3Medium.copyWith(color: AppColors.alert)),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  Text(formatPrice(price),
+                      style: AppText.b3Medium.copyWith(color: AppColors.ink)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -306,7 +327,7 @@ class SearchField extends StatelessWidget {
 
   const SearchField({
     super.key,
-    this.hint = 'ابحث عن ملابس...',
+    this.hint = 'ابحث عن منتج...',
     this.readOnly = false,
     this.onTap,
     this.onChanged,
@@ -355,7 +376,7 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: AppColors.accent.withValues(alpha: 0.35)),
+            Icon(icon, size: 64, color: AppColors.body.withValues(alpha: 0.35)),
             const SizedBox(height: AppSpacing.lg),
             Text(title, textAlign: TextAlign.center, style: AppText.h4SemiBold),
             const SizedBox(height: AppSpacing.md),
