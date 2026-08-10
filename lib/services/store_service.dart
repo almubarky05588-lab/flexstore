@@ -41,7 +41,6 @@ class StoreService {
   }
 
   // ----------------------------------------------------------------- التصنيفات
-  /// الأقسام الرئيسية فقط (بلا تصنيفات فرعية).
   Future<List<Map<String, dynamic>>> categories() async {
     final rows = await _client
         .from('categories')
@@ -52,7 +51,6 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// التصنيفات الفرعية داخل قسم معيّن (بطاقات دائرية/مربعة بصور).
   Future<List<Map<String, dynamic>>> subcategories(String parentId) async {
     final rows = await _client
         .from('categories')
@@ -61,6 +59,13 @@ class StoreService {
         .eq('parent_id', parentId)
         .order('sort_order');
     return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// بيانات تصنيف واحد (للعنوان في صفحة القائمة).
+  Future<Map<String, dynamic>?> category(String id) async {
+    final row =
+        await _client.from('categories').select().eq('id', id).maybeSingle();
+    return row;
   }
 
   // ------------------------------------------------------------------ المنتجات
@@ -80,6 +85,31 @@ class StoreService {
 
     final rows = await query.order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// منتجات تصنيف حسب نوعه (عادي / الأكثر مبيعًا / يدوي) عبر دالة القاعدة.
+  Future<List<Map<String, dynamic>>> categoryProducts(String categoryId) async {
+    final data = await _client
+        .rpc('category_products_list', params: {'p_category_id': categoryId});
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) return list;
+
+    // نجلب صور هذه المنتجات ونضمّها
+    final ids = list.map((p) => p['id'] as String).toList();
+    final imgs = await _client
+        .from('product_images')
+        .select('product_id, url, sort_order')
+        .inFilter('product_id', ids)
+        .order('sort_order');
+
+    final byProduct = <String, List<Map<String, dynamic>>>{};
+    for (final img in List<Map<String, dynamic>>.from(imgs)) {
+      (byProduct[img['product_id'] as String] ??= []).add(img);
+    }
+    for (final p in list) {
+      p['product_images'] = byProduct[p['id']] ?? [];
+    }
+    return list;
   }
 
   Future<Product> product(String id) async {
@@ -131,7 +161,7 @@ class StoreService {
         .select('''
           id, quantity,
           variants(
-            id, price, image_url, stock,
+            id, price, image_url, stock_qty,
             products(id, name_ar, base_price, kind),
             variant_option_values(
               option_values(value_ar, option_types(name_ar))
