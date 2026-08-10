@@ -343,15 +343,17 @@ class _NotificationSettingsScreenState
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(
+              // النص يمين والمفتاح يسار — نفرض الاتجاه صراحةً
+              textDirection: TextDirection.rtl,
               children: [
+                Text(key, style: AppText.b1Regular),
+                const Spacer(),
                 Switch(
                   value: _settings[key]!,
                   activeThumbColor: AppColors.white,
                   activeTrackColor: AppColors.accent,
                   onChanged: (v) => setState(() => _settings[key] = v),
                 ),
-                const Spacer(),
-                Text(key, style: AppText.b1Regular),
               ],
             ),
           );
