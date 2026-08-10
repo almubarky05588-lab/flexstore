@@ -7,7 +7,6 @@ import '../../widgets/app_icons.dart';
 import '../main_shell.dart' show activeTabNotifier;
 
 /// الرئيسية "اكتشف" — بنرات + تصنيفات + منتجات.
-/// البنرات والتصنيفات تفتح صفحة قائمة المنتجات.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -105,7 +104,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// يفتح صفحة قائمة المنتجات لأي تصنيف.
   void _openList(String? categoryId, String? title) {
     if (categoryId == null) return;
     Navigator.of(context).pushNamed('/products', arguments: {
@@ -116,8 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onBannerTap(Map<String, dynamic> banner) {
     final type = banner['target_type'] as String? ?? 'category';
-    final targetId =
-        (banner['target_id'] ?? banner['category_id']) as String?;
+    final targetId = (banner['target_id'] ?? banner['category_id']) as String?;
     if (type == 'product' && targetId != null) {
       Navigator.of(context).pushNamed('/product', arguments: targetId);
     } else if (targetId != null) {
@@ -198,7 +195,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // وضع شامل: شريط الأقسام
                     if (!_isSingleMode) ...[
                       SizedBox(
                         height: 44,
@@ -229,7 +225,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // وضع القسم الواحد: تصنيفات القسم
                     if (_isSingleMode && _subcategories.isNotEmpty) ...[
                       if (textSubs.isNotEmpty) ...[
                         SizedBox(
@@ -335,6 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _smallChip(String label, bool selected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -387,8 +383,7 @@ class _SubcategoryRow extends StatelessWidget {
               label: s['name_ar'] as String,
               imageUrl: s['image_url'] as String?,
               circle: (s['shape'] as String? ?? 'circle') == 'circle',
-              onTap: () =>
-                  onSelect(s['id'] as String, s['name_ar'] as String),
+              onTap: () => onSelect(s['id'] as String, s['name_ar'] as String),
             ),
             const SizedBox(width: 12),
           ],
@@ -510,6 +505,7 @@ class _PromoCarouselState extends State<_PromoCarousel> {
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: GestureDetector(
                   onTap: () => widget.onTap(b),
+                  behavior: HitTestBehavior.opaque,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(AppRadius.base),
                     child: Container(
@@ -564,6 +560,7 @@ class _CategoryBannerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.base),
         child: SizedBox(
@@ -610,6 +607,7 @@ class _NotificationBell extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.of(context).pushNamed('/notifications'),
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 24, height: 24,
         child: Stack(
@@ -812,7 +810,7 @@ class _SearchScreenState extends State<SearchScreen> {
             GestureDetector(
               onTap: () => setState(_recent.clear),
               child: Text('مسح الكل',
-                  style: AppText.b2Medium.copyWith(color: AppColors.accent)),
+                  style: AppText.b2Medium.copyWith(color: AppColors.body)),
             ),
           ],
         ),
@@ -882,7 +880,7 @@ class _ResultRow extends StatelessWidget {
                 Text(name, style: AppText.b1SemiBold),
                 const SizedBox(height: AppSpacing.xs),
                 Text(formatPrice(price),
-                    style: AppText.b3Medium.copyWith(color: AppColors.accent)),
+                    style: AppText.b3Medium.copyWith(color: AppColors.ink)),
               ],
             ),
           ),
@@ -892,7 +890,7 @@ class _ResultRow extends StatelessWidget {
   }
 }
 
-// ================================================================= المحفوظات
+// ================================================================== المفضلة
 class SavedItemsScreen extends StatefulWidget {
   const SavedItemsScreen({super.key});
 
@@ -942,14 +940,14 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppHeader(title: 'المحفوظات'),
+      appBar: const AppHeader(title: 'المفضلة'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty
               ? const EmptyState(
                   icon: Icons.favorite_border,
-                  title: 'لا توجد عناصر محفوظة!',
-                  message: 'ما عندك عناصر محفوظة. ارجع للرئيسية وأضف بعضها.')
+                  title: 'لا توجد عناصر مفضلة!',
+                  message: 'ما عندك عناصر مفضلة. ارجع للرئيسية وأضف بعضها.')
               : RefreshIndicator(
                   onRefresh: _load,
                   child: GridView.builder(
