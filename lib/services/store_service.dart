@@ -163,7 +163,6 @@ class StoreService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// إضافة عنوان جديد لدفتر العناوين.
   Future<void> addAddress({
     required String label,
     required String fullText,
@@ -179,9 +178,44 @@ class StoreService {
     });
   }
 
-  /// حذف عنوان.
   Future<void> deleteAddress(String addressId) async {
     await _client.from('addresses').delete().eq('id', addressId);
+  }
+
+  // ------------------------------------------------------------ بطاقات الدفع
+  /// البطاقات المحفوظة (عرض فقط: آخر 4 أرقام والعلامة والانتهاء).
+  Future<List<Map<String, dynamic>>> paymentCards() async {
+    final rows = await _client
+        .from('payment_cards')
+        .select()
+        .eq('user_id', _uid)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// حفظ بطاقة — لا يُخزَّن الرقم الكامل ولا رمز التحقق إطلاقًا.
+  Future<void> addPaymentCard({
+    required String last4,
+    required String brand,
+    required int expMonth,
+    required int expYear,
+    String? holderName,
+    bool isDefault = false,
+  }) async {
+    await _client.from('payment_cards').insert({
+      'user_id': _uid,
+      'last4': last4,
+      'brand': brand,
+      'exp_month': expMonth,
+      'exp_year': expYear,
+      if (holderName != null && holderName.trim().isNotEmpty)
+        'holder_name': holderName.trim(),
+      'is_default': isDefault,
+    });
+  }
+
+  Future<void> deletePaymentCard(String cardId) async {
+    await _client.from('payment_cards').delete().eq('id', cardId);
   }
 
   // ------------------------------------------------------------------- الطلبات
