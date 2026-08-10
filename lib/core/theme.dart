@@ -7,6 +7,9 @@ class AppColors {
   static const accent = Color(0xFF111111);
   static const accentEnd = Color(0xFF3A3A3A);
 
+  /// درجة باهتة تُستخدم للعناصر غير المتاحة
+  static const primary200 = Color(0xFFBDBDBD);
+
   /// لون التنبيهات فقط (نقطة الجرس، شارة السلة) — يبقى بارزًا
   static const alert = Color(0xFFFF3B30);
 
@@ -68,6 +71,8 @@ class AppText {
       fontSize: 24, fontWeight: FontWeight.w600, color: AppColors.ink);
   static TextStyle get h4SemiBold => GoogleFonts.cairo(
       fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.ink);
+  static TextStyle get h4Medium => GoogleFonts.cairo(
+      fontSize: 20, fontWeight: FontWeight.w500, color: AppColors.ink);
 
   static TextStyle get b1SemiBold => GoogleFonts.cairo(
       fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.ink);
