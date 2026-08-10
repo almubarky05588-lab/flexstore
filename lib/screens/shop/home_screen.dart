@@ -6,9 +6,8 @@ import '../../widgets/common.dart';
 import '../../widgets/app_icons.dart';
 import '../main_shell.dart' show activeTabNotifier;
 
-/// الرئيسية "اكتشف".
-/// وضع شامل: شريط الأقسام الرئيسية.
-/// وضع قسم واحد: تصنيفات ذلك القسم (بطاقات/نصوص) مكان شريط الأقسام.
+/// الرئيسية "اكتشف" — بنرات + تصنيفات + منتجات.
+/// البنرات والتصنيفات تفتح صفحة قائمة المنتجات.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -25,7 +24,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _categoryBanners = [];
   Set<String> _favoriteIds = {};
   String? _selectedCategory;
-  String? _selectedSub;
   String? _lockedCategory;
   bool _loading = true;
 
@@ -52,10 +50,10 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
     try {
       final locked = await _service.singleCategoryId();
-
-      // في وضع القسم الواحد: نعرض تصنيفاته، وننتقي منتجات التصنيف المختار أو القسم كله
-      final subs = locked != null ? await _service.subcategories(locked) : <Map<String, dynamic>>[];
-      final target = _selectedSub ?? locked ?? _selectedCategory;
+      final subs = locked != null
+          ? await _service.subcategories(locked)
+          : <Map<String, dynamic>>[];
+      final target = locked ?? _selectedCategory;
 
       final results = await Future.wait([
         _service.categories(),
@@ -107,17 +105,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _selectSub(String? id) {
-    setState(() => _selectedSub = id);
-    _load();
+  /// يفتح صفحة قائمة المنتجات لأي تصنيف.
+  void _openList(String? categoryId, String? title) {
+    if (categoryId == null) return;
+    Navigator.of(context).pushNamed('/products', arguments: {
+      'categoryId': categoryId,
+      if (title != null) 'title': title,
+    });
   }
 
-  void _onCategoryBannerTap(Map<String, dynamic> banner) {
-    if (_isSingleMode) return;
-    final categoryId = banner['category_id'] as String?;
-    if (categoryId != null) {
-      setState(() => _selectedCategory = categoryId);
-      _load();
+  void _onBannerTap(Map<String, dynamic> banner) {
+    final type = banner['target_type'] as String? ?? 'category';
+    final targetId =
+        (banner['target_id'] ?? banner['category_id']) as String?;
+    if (type == 'product' && targetId != null) {
+      Navigator.of(context).pushNamed('/product', arguments: targetId);
+    } else if (targetId != null) {
+      _openList(targetId, banner['title_ar'] as String?);
     }
   }
 
@@ -187,11 +191,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: AppSpacing.lg),
 
                     if (_promoBanners.isNotEmpty) ...[
-                      _PromoCarousel(banners: _promoBanners),
+                      _PromoCarousel(
+                        banners: _promoBanners,
+                        onTap: _onBannerTap,
+                      ),
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // وضع شامل: شريط الأقسام الرئيسية
+                    // وضع شامل: شريط الأقسام
                     if (!_isSingleMode) ...[
                       SizedBox(
                         height: 44,
@@ -222,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // ★ وضع القسم الواحد: تصنيفات القسم مكان شريط الأقسام ★
+                    // وضع القسم الواحد: تصنيفات القسم
                     if (_isSingleMode && _subcategories.isNotEmpty) ...[
                       if (textSubs.isNotEmpty) ...[
                         SizedBox(
@@ -232,15 +239,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             reverse: true,
                             padding: AppSpacing.screenPadding,
                             children: [
-                              _smallChip('الكل', _selectedSub == null,
-                                  () => _selectSub(null)),
                               for (final s in textSubs) ...[
-                                const SizedBox(width: AppSpacing.sm),
                                 _smallChip(
                                   s['name_ar'] as String,
-                                  _selectedSub == s['id'],
-                                  () => _selectSub(s['id'] as String),
+                                  false,
+                                  () => _openList(s['id'] as String,
+                                      s['name_ar'] as String),
                                 ),
+                                const SizedBox(width: AppSpacing.sm),
                               ],
                             ],
                           ),
@@ -252,9 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           padding: AppSpacing.screenPadding,
                           child: _SubcategoryRow(
                             items: cardSubs,
-                            selectedId: _selectedSub,
-                            onSelect: _selectSub,
-                            showAllTile: textSubs.isEmpty,
+                            onSelect: (id, title) => _openList(id, title),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
@@ -269,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             for (final b in _categoryBanners) ...[
                               _CategoryBannerCard(
                                 banner: b,
-                                onTap: () => _onCategoryBannerTap(b),
+                                onTap: () => _onBannerTap(b),
                               ),
                               const SizedBox(height: AppSpacing.md),
                             ],
@@ -362,19 +366,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// صف أفقي لبطاقات التصنيفات (دائرية/مربعة) بالصور.
+/// صف بطاقات التصنيفات (دائرية/مربعة).
 class _SubcategoryRow extends StatelessWidget {
   final List<Map<String, dynamic>> items;
-  final String? selectedId;
-  final ValueChanged<String?> onSelect;
-  final bool showAllTile;
+  final void Function(String id, String title) onSelect;
 
-  const _SubcategoryRow({
-    required this.items,
-    required this.selectedId,
-    required this.onSelect,
-    this.showAllTile = true,
-  });
+  const _SubcategoryRow({required this.items, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -385,23 +382,13 @@ class _SubcategoryRow extends StatelessWidget {
         reverse: true,
         padding: EdgeInsets.zero,
         children: [
-          if (showAllTile) ...[
-            _tile(
-              label: 'الكل',
-              imageUrl: null,
-              circle: true,
-              selected: selectedId == null,
-              onTap: () => onSelect(null),
-            ),
-            const SizedBox(width: 12),
-          ],
           for (final s in items) ...[
             _tile(
               label: s['name_ar'] as String,
               imageUrl: s['image_url'] as String?,
               circle: (s['shape'] as String? ?? 'circle') == 'circle',
-              selected: selectedId == s['id'],
-              onTap: () => onSelect(s['id'] as String),
+              onTap: () =>
+                  onSelect(s['id'] as String, s['name_ar'] as String),
             ),
             const SizedBox(width: 12),
           ],
@@ -414,7 +401,6 @@ class _SubcategoryRow extends StatelessWidget {
     required String label,
     required String? imageUrl,
     required bool circle,
-    required bool selected,
     required VoidCallback onTap,
   }) {
     const size = 72.0;
@@ -426,8 +412,7 @@ class _SubcategoryRow extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
+            Container(
               width: size,
               height: size,
               padding: const EdgeInsets.all(3),
@@ -435,10 +420,7 @@ class _SubcategoryRow extends StatelessWidget {
                 shape: circle ? BoxShape.circle : BoxShape.rectangle,
                 borderRadius:
                     circle ? null : BorderRadius.circular(AppRadius.base),
-                border: Border.all(
-                  color: selected ? AppColors.accent : AppColors.line,
-                  width: selected ? 2 : 1,
-                ),
+                border: Border.all(color: AppColors.line),
               ),
               child: ClipRRect(
                 borderRadius: circle
@@ -467,9 +449,7 @@ class _SubcategoryRow extends StatelessWidget {
               maxLines: 1,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style: AppText.b3Medium.copyWith(
-                color: selected ? AppColors.ink : AppColors.body,
-              ),
+              style: AppText.b3Medium.copyWith(color: AppColors.body),
             ),
           ],
         ),
@@ -478,10 +458,11 @@ class _SubcategoryRow extends StatelessWidget {
   }
 }
 
-/// الكاروسيل الإعلاني — يتنقّل تلقائيًا كل 4 ثوانٍ.
+/// الكاروسيل الإعلاني.
 class _PromoCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> banners;
-  const _PromoCarousel({required this.banners});
+  final void Function(Map<String, dynamic>) onTap;
+  const _PromoCarousel({required this.banners, required this.onTap});
 
   @override
   State<_PromoCarousel> createState() => _PromoCarouselState();
@@ -527,17 +508,20 @@ class _PromoCarouselState extends State<_PromoCarousel> {
               final b = widget.banners[i];
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 25),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.base),
-                  child: Container(
-                    color: AppColors.surface,
-                    child: Image.network(
-                      b['image_url'] as String,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      errorBuilder: (_, __, ___) => Center(
-                        child: Text(b['title_ar'] as String? ?? '',
-                            style: AppText.b1SemiBold),
+                child: GestureDetector(
+                  onTap: () => widget.onTap(b),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.base),
+                    child: Container(
+                      color: AppColors.surface,
+                      child: Image.network(
+                        b['image_url'] as String,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Text(b['title_ar'] as String? ?? '',
+                              style: AppText.b1SemiBold),
+                        ),
                       ),
                     ),
                   ),
