@@ -7,6 +7,7 @@ import '../screens/shop/product_details.dart';
 import '../screens/cart/cart_checkout.dart';
 import '../screens/orders/orders_screens.dart';
 import '../screens/account/account_screens.dart';
+import '../screens/account/new_address_screen.dart';
 
 /// خريطة المسارات — كل شاشة في فِقما لها مسار هنا.
 final appRoutes = <String, WidgetBuilder>{
@@ -32,6 +33,7 @@ final appRoutes = <String, WidgetBuilder>{
   '/cart':            (_) => const CartScreen(),
   '/checkout':        (_) => const CheckoutScreen(),
   '/addresses':       (_) => const AddressesScreen(),
+  '/new-address':     (_) => const NewAddressScreen(),
   '/payment-methods': (_) => const PaymentMethodsScreen(),
 
   // الطلبات
