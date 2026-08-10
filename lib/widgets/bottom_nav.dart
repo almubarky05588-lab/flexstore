@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 
-/// شريط التنقّل السفلي — خمسة عناصر، الترتيب من اليمين كما في التصميم:
-/// الرئيسية، الأقسام، المحفوظات، السلة، حسابي.
+/// شريط التنقّل السفلي — خمسة عناصر، الترتيب من اليمين:
+/// الرئيسية، الأقسام، المفضلة، السلة، حسابي.
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -18,7 +18,7 @@ class AppBottomNav extends StatelessWidget {
   static const _items = [
     (_NavIcon(Icons.home_outlined, Icons.home_rounded), 'الرئيسية'),
     (_NavIcon(Icons.grid_view_outlined, Icons.grid_view_rounded), 'الأقسام'),
-    (_NavIcon(Icons.favorite_border, Icons.favorite), 'المحفوظات'),
+    (_NavIcon(Icons.favorite_border, Icons.favorite), 'المفضلة'),
     (_NavIcon(Icons.shopping_cart_outlined, Icons.shopping_cart), 'السلة'),
     (_NavIcon(Icons.person_outline, Icons.person), 'حسابي'),
   ];
@@ -61,7 +61,7 @@ class AppBottomNav extends StatelessWidget {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 5, vertical: 1),
                                 decoration: BoxDecoration(
-                                  color: AppColors.accent,
+                                  color: AppColors.alert,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
