@@ -45,7 +45,7 @@ class StoreService {
   /// تفاصيل منتج كاملة عبر دالة قاعدة البيانات product_full
   Future<Product> product(String id) async {
     final data = await _client.rpc('product_full', params: {'p_product_id': id});
-    return Product.fromJson(Map<String, dynamic>.from(data as Map));
+    return Product.fromFullJson(Map<String, dynamic>.from(data as Map));
   }
 
   // ------------------------------------------------------------------- المفضلة
@@ -163,11 +163,16 @@ class StoreService {
     });
   }
 
-  Future<List<Map<String, dynamic>>> orders() async {
+  /// الطلبات: الجارية (قيد التجهيز/الشحن) أو المكتملة/الملغاة.
+  Future<List<Map<String, dynamic>>> orders({bool ongoing = true}) async {
+    final statuses = ongoing
+        ? ['pending', 'processing', 'shipped']
+        : ['delivered', 'cancelled', 'refunded'];
     final rows = await _client
         .from('orders')
-        .select('*, order_items(quantity, unit_price, name_snapshot)')
+        .select('*, order_items(quantity, unit_price, name_snapshot, options_snapshot)')
         .eq('user_id', _uid)
+        .inFilter('status', statuses)
         .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(rows);
   }
