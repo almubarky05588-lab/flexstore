@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/bottom_nav.dart';
 import 'shop/home_screen.dart';
+import 'shop/categories_screen.dart';
 import 'cart/cart_checkout.dart';
 import 'account/account_screens.dart';
 
@@ -19,10 +20,10 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  // الترتيب يطابق شريط التنقل: الرئيسية، بحث، المحفوظات، السلة، حسابي
+  // الترتيب يطابق شريط التنقل: الرئيسية، الأقسام، المحفوظات، السلة، حسابي
   final _screens = const [
     HomeScreen(),
-    SearchScreen(),
+    CategoriesScreen(),
     SavedItemsScreen(),
     CartScreen(),
     AccountScreen(),
