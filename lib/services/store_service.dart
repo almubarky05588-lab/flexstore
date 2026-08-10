@@ -6,7 +6,7 @@ import '../models/product.dart';
 /// مصدر البيانات يُقرأ من `store_settings.data_source`:
 ///   supabase (افتراضي) | salla
 /// في وضع سلة: المنتجات والأقسام تأتي من سلة عبر وسيط `salla-api`.
-/// الإعدادات والبنرات والإشعارات والمفضلة والسلة تبقى على Supabase.
+/// الإعدادات والبنرات والإشعارات تبقى على Supabase.
 class StoreService {
   final _client = Supabase.instance.client;
 
@@ -18,14 +18,15 @@ class StoreService {
   Future<String> _source() async {
     if (_cachedSource != null) return _cachedSource!;
     final s = await storeSettings();
-    _cachedSource = (s['data_source'] as String?) == 'salla' ? 'salla' : 'supabase';
+    _cachedSource =
+        (s['data_source'] as String?) == 'salla' ? 'salla' : 'supabase';
     return _cachedSource!;
   }
 
   // ----------------------------------------------------- نداء وسيط سلة الآمن
   /// ينادي دالة `salla-api` (GET). الرد مغلّف: { store, status, data }.
-  /// نرجّع الحمولة `data` مباشرةً.
-  Future<dynamic> _sallaGet(String resource, {Map<String, String>? params}) async {
+  Future<dynamic> _sallaGet(String resource,
+      {Map<String, String>? params}) async {
     final res = await _client.functions.invoke(
       'salla-api',
       method: HttpMethod.get,
@@ -37,6 +38,7 @@ class StoreService {
   }
 
   // ------------------------------------------------------- أدوات تحويل سلة
+  /// سلة ترسل السعر ككائن { amount, currency }.
   double? _amount(dynamic v) {
     if (v == null) return null;
     if (v is num) return v.toDouble();
@@ -61,10 +63,11 @@ class StoreService {
         }
       }
     }
-    if (out.isEmpty && s['main_image'] != null) out.add('${s['main_image']}');
-    if (out.isEmpty && s['image'] != null) {
-      final im = s['image'];
-      out.add(im is Map ? '${im['url']}' : '$im');
+    for (final k in const ['main_image', 'thumbnail']) {
+      if (out.isEmpty && s[k] != null) {
+        final im = s[k];
+        out.add(im is Map ? '${im['url']}' : '$im');
+      }
     }
     return out;
   }
@@ -80,48 +83,57 @@ class StoreService {
     if (html == null || html.isEmpty) return null;
     final t = html
         .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll(RegExp(r'&nbsp;'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     return t.isEmpty ? null : t;
   }
 
+  /// السعر الحالي والسعر قبل الخصم.
+  /// في سلة: price/sale_price = الحالي، regular_price = قبل الخصم.
+  ({double current, double? before}) _prices(Map s) {
+    final price = _amount(s['price']) ?? 0;
+    final sale = _amount(s['sale_price']);
+    final regular = _amount(s['regular_price']);
+    final current = (sale != null && sale > 0) ? sale : price;
+    final before = (regular != null && regular > current) ? regular : null;
+    return (current: current, before: before);
+  }
+
   /// منتج سلة → شكل القائمة الذي تقرأه كروت المنتجات.
   Map<String, dynamic> _sallaListItem(Map s) {
-    final base = _amount(s['price']) ?? 0;
-    final regular = _amount(s['regular_price']);
-    final sale = _amount(s['sale_price']);
-    final current = sale ?? base;
-    final original = regular ?? base;
+    final p = _prices(s);
     return {
       'id': '${s['id']}',
       'name_ar': (s['name'] ?? '').toString(),
-      'base_price': current,
-      'compare_at_price': original > current ? original : null,
+      'base_price': p.current,
+      'compare_at_price': p.before,
       'product_images': _images(s).map((u) => {'url': u}).toList(),
     };
   }
 
   /// منتج سلة → شكل `Product.fromFullJson` الكامل (خيارات/نسخ/صور).
   Map<String, dynamic> _sallaFullJson(Map s) {
-    final base = _amount(s['price']) ?? 0;
-    final regular = _amount(s['regular_price']);
-    final sale = _amount(s['sale_price']);
-    final current = sale ?? base;
-    final original = regular ?? base;
+    final p = _prices(s);
 
     final rating = s['rating'];
-    final ratingAvg =
-        rating is Map ? (_amount(rating['total'] ?? rating['rating']) ?? 0) : 0;
+    final ratingAvg = rating is Map ? (_amount(rating['rate']) ?? 0) : 0;
     final ratingCount =
         rating is Map ? ((rating['count'] as num?)?.toInt() ?? 0) : 0;
 
+    // في سلة نوع المنتج الرقمي: digital / codes / file
+    final rawType = '${s['type'] ?? ''}'.toLowerCase();
     final kind =
-        '${s['type'] ?? s['product_type'] ?? ''}'.toLowerCase() == 'digital'
+        (rawType == 'digital' || rawType == 'codes' || rawType == 'file')
             ? 'digital'
             : 'physical';
 
+    final unlimited = s['unlimited_quantity'] == true;
+    final available = s['is_available'] != false;
+
     // الخيارات
     final optionTypes = <Map<String, dynamic>>[];
+    final outOfStockValues = <String>{};
     final opts = s['options'];
     if (opts is List) {
       for (final o in opts) {
@@ -131,52 +143,69 @@ class StoreService {
         if (vs is List) {
           for (final v in vs) {
             if (v is! Map) continue;
-            final vImg = v['image'];
+            final vid = '${v['id']}';
+            if (v['is_out_of_stock'] == true) outOfStockValues.add(vid);
+            final vImg = v['image_url'] ?? v['image'];
             values.add({
-              'id': '${v['id']}',
+              'id': vid,
               'value_ar': (v['name'] ?? v['display_value'] ?? '').toString(),
               'hex_color': v['hex_color'] ?? v['color'],
               'image_url': vImg is Map ? '${vImg['url']}' : vImg,
             });
           }
         }
+        if (values.isEmpty) continue;
         optionTypes.add({
           'id': '${o['id']}',
           'name_ar': (o['name'] ?? '').toString(),
           'code': '${o['id']}',
-          'display_as': _display('${o['type'] ?? o['display_type'] ?? ''}'),
+          'display_as': _display('${o['display_type'] ?? o['type'] ?? ''}'),
           'values': values,
         });
       }
     }
 
+    /// المخزون في سلة قد يكون 0 مع كون المنتج متاحًا (كمية غير محدودة).
+    int stockOf(Map? sku) {
+      final skuUnlimited = sku?['unlimited_quantity'] == true;
+      final q = (sku?['stock_quantity'] as num?)?.toInt() ??
+          (s['quantity'] as num?)?.toInt();
+      if (q != null && q > 0) return q;
+      if (skuUnlimited || unlimited) return 99;
+      if (q == null && available) return 99;
+      return q ?? 0;
+    }
+
     // النسخ (skus). منتج بلا خيارات → نسخة واحدة مركّبة.
     final variants = <Map<String, dynamic>>[];
     final skus = s['skus'];
-    if (skus is List && skus.isNotEmpty) {
+    if (skus is List && skus.isNotEmpty && optionTypes.isNotEmpty) {
       for (final k in skus) {
         if (k is! Map) continue;
-        final vSale = _amount(k['sale_price']);
-        final vBase = _amount(k['price']) ?? current;
+        final ids = ((k['related_option_values'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList();
+        final kSale = _amount(k['sale_price']);
+        final kPrice = _amount(k['price']);
+        final kCurrent =
+            (kSale != null && kSale > 0) ? kSale : (kPrice ?? p.current);
+        final soldOut = ids.any(outOfStockValues.contains);
         variants.add({
           'id': '${k['id']}',
           'sku': k['sku'] ?? k['barcode'],
-          'price': vSale ?? vBase,
-          'stock_qty': (k['stock_quantity'] as num?)?.toInt() ??
-              (k['quantity'] as num?)?.toInt() ??
-              0,
+          'price': kCurrent,
+          'stock_qty': soldOut ? 0 : stockOf(k),
           'image_url': null,
-          'option_value_ids': ((k['related_option_values'] as List?) ?? const [])
-              .map((e) => '$e')
-              .toList(),
+          'option_value_ids': ids,
         });
       }
-    } else {
+    }
+    if (variants.isEmpty) {
       variants.add({
         'id': '${s['id']}',
-        'sku': s['sku'],
-        'price': current,
-        'stock_qty': (s['quantity'] as num?)?.toInt() ?? 99,
+        'sku': s['sku'] ?? s['barcode'],
+        'price': p.current,
+        'stock_qty': stockOf(null),
         'image_url': null,
         'option_value_ids': const [],
       });
@@ -188,24 +217,26 @@ class StoreService {
         'name_ar': (s['name'] ?? '').toString(),
         'description_ar': _stripHtml(s['description']?.toString()),
         'kind': kind,
-        'base_price': current,
-        'compare_at_price': original > current ? original : null,
+        'base_price': p.current,
+        'compare_at_price': p.before,
         'rating_avg': ratingAvg,
         'rating_count': ratingCount,
       },
       'images': _images(s),
-      'option_types': optionTypes,
+      'option_types': variants.length > 1 ? optionTypes : const [],
       'variants': variants,
     };
   }
 
   /// أقسام سلة تُسحب مرة وتُسطّح (جذور + أبناء) مع ربط الأب.
+  /// ملاحظة: سلة ترسل parent_id = 0 للأقسام الرئيسية.
   List<Map<String, dynamic>>? _catCache;
 
   Future<List<Map<String, dynamic>>> _sallaFlatCategories() async {
     if (_catCache != null) return _catCache!;
     final data = await _sallaGet('categories');
     final out = <Map<String, dynamic>>[];
+
     void walk(dynamic node, String? parent) {
       if (node is List) {
         for (final n in node) {
@@ -215,7 +246,9 @@ class StoreService {
       }
       if (node is! Map) return;
       final id = '${node['id']}';
-      final pid = node['parent_id'] != null ? '${node['parent_id']}' : parent;
+      final raw = node['parent_id'];
+      final isRoot = raw == null || raw == 0 || '$raw' == '0';
+      final pid = isRoot ? parent : '$raw';
       final m = Map<String, dynamic>.from(node);
       m['_id'] = id;
       m['_parent'] = pid;
@@ -230,14 +263,24 @@ class StoreService {
 
   Map<String, dynamic> _sallaCategory(Map c) {
     final img = c['image'];
+    final url = img is Map ? '${img['url']}' : img?.toString();
     return {
       'id': c['_id'] ?? '${c['id']}',
       'name_ar': (c['name'] ?? '').toString(),
-      'shape': 'square',
-      'image_url': img is Map ? '${img['url']}' : img?.toString(),
+      'shape': 'circle',
+      'image_url': (url == null || url.isEmpty || url == 'null') ? null : url,
       'parent_id': c['_parent'],
-      'is_active': (c['status']?.toString() ?? 'active') != 'hidden',
+      'is_active': (c['status']?.toString() ?? 'active') == 'active',
     };
+  }
+
+  List<Map<String, dynamic>> _sallaProductList(dynamic data) {
+    final list = (data is List) ? data : const [];
+    return list
+        .whereType<Map>()
+        .where((m) => m['status']?.toString() != 'hidden')
+        .map((m) => _sallaListItem(m))
+        .toList();
   }
 
   // ------------------------------------------------------------ إعدادات المتجر
@@ -280,6 +323,7 @@ class StoreService {
       return flat
           .where((c) => c['_parent'] == null)
           .map(_sallaCategory)
+          .where((c) => c['is_active'] == true)
           .toList();
     }
     final rows = await _client
@@ -297,6 +341,7 @@ class StoreService {
       return flat
           .where((c) => c['_parent'] == parentId)
           .map(_sallaCategory)
+          .where((c) => c['is_active'] == true)
           .toList();
     }
     final rows = await _client
@@ -312,7 +357,10 @@ class StoreService {
   Future<Map<String, dynamic>?> category(String id) async {
     if (await _source() == 'salla') {
       final flat = await _sallaFlatCategories();
-      final c = flat.firstWhere((e) => e['_id'] == id, orElse: () => {});
+      final c = flat.firstWhere(
+        (e) => e['_id'] == id,
+        orElse: () => <String, dynamic>{},
+      );
       return c.isEmpty ? null : _sallaCategory(c);
     }
     final row =
@@ -332,11 +380,7 @@ class StoreService {
       }
       if (categoryId != null) params['category'] = categoryId;
       final data = await _sallaGet('products', params: params);
-      final list = (data is List) ? data : const [];
-      return list
-          .whereType<Map>()
-          .map((m) => _sallaListItem(m))
-          .toList();
+      return _sallaProductList(data);
     }
 
     var query = _client
@@ -356,12 +400,9 @@ class StoreService {
   /// منتجات تصنيف حسب نوعه (عادي / الأكثر مبيعًا / يدوي) عبر دالة القاعدة.
   Future<List<Map<String, dynamic>>> categoryProducts(String categoryId) async {
     if (await _source() == 'salla') {
-      final data = await _sallaGet('products', params: {'category': categoryId});
-      final list = (data is List) ? data : const [];
-      return list
-          .whereType<Map>()
-          .map((m) => _sallaListItem(m))
-          .toList();
+      final data =
+          await _sallaGet('products', params: {'category': categoryId});
+      return _sallaProductList(data);
     }
 
     final data = await _client
@@ -401,12 +442,16 @@ class StoreService {
 
   // ------------------------------------------------------------------- المفضلة
   Future<Set<String>> favoriteIds() async {
-    final rows =
-        await _client.from('favorites').select('product_id').eq('user_id', _uid);
+    if (await _source() == 'salla') return <String>{};
+    final rows = await _client
+        .from('favorites')
+        .select('product_id')
+        .eq('user_id', _uid);
     return rows.map((r) => r['product_id'] as String).toSet();
   }
 
   Future<List<Map<String, dynamic>>> favorites() async {
+    if (await _source() == 'salla') return <Map<String, dynamic>>[];
     final rows = await _client
         .from('favorites')
         .select('product_id, products(*, product_images(url, sort_order))')
@@ -416,6 +461,7 @@ class StoreService {
   }
 
   Future<void> toggleFavorite(String productId) async {
+    if (await _source() == 'salla') return;
     final existing = await _client
         .from('favorites')
         .select('product_id')
@@ -456,6 +502,9 @@ class StoreService {
   }
 
   Future<void> addToCart(String variantId, {int quantity = 1}) async {
+    if (await _source() == 'salla') {
+      throw Exception('الشراء من متجر سلة غير مفعّل بعد');
+    }
     final existing = await _client
         .from('cart_items')
         .select('id, quantity')
@@ -550,7 +599,8 @@ class StoreService {
   }
 
   // ------------------------------------------------------------------- الطلبات
-  Future<String> placeOrder({String? addressId, required String payMethod}) async {
+  Future<String> placeOrder(
+      {String? addressId, required String payMethod}) async {
     final data = await _client.rpc('place_order', params: {
       'p_address_id': addressId,
       'p_pay_method': payMethod,
@@ -570,7 +620,8 @@ class StoreService {
         : ['delivered', 'cancelled', 'refunded'];
     final rows = await _client
         .from('orders')
-        .select('*, order_items(quantity, unit_price, name_snapshot, options_snapshot)')
+        .select(
+            '*, order_items(quantity, unit_price, name_snapshot, options_snapshot)')
         .eq('user_id', _uid)
         .inFilter('status', statuses)
         .order('created_at', ascending: false);
