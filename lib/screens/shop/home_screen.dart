@@ -7,6 +7,7 @@ import '../../widgets/app_icons.dart';
 import '../main_shell.dart' show activeTabNotifier;
 
 /// الرئيسية "اكتشف" — بنر متحرك + بنرات أقسام + تصنيفات + شبكة منتجات.
+/// تحترم وضع المتجر: لو مخصص لقسم واحد، تعرض منتجاته فقط بلا شريط تصنيفات.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -22,7 +23,10 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _categoryBanners = [];
   Set<String> _favoriteIds = {};
   String? _selectedCategory;
+  String? _lockedCategory; // القسم المفروض من وضع المتجر
   bool _loading = true;
+
+  bool get _isSingleMode => _lockedCategory != null;
 
   @override
   void initState() {
@@ -44,15 +48,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      // وضع المتجر أولًا — يحدد أي منتجات نعرض
+      final locked = await _service.singleCategoryId();
+      final effectiveCategory = locked ?? _selectedCategory;
+
       final results = await Future.wait([
         _service.categories(),
-        _service.products(categoryId: _selectedCategory),
+        _service.products(categoryId: effectiveCategory),
         _service.favoriteIds(),
         _service.promoBanners(),
         _service.categoryBanners(),
       ]);
       if (!mounted) return;
       setState(() {
+        _lockedCategory = locked;
         _categories = results[0] as List<Map<String, dynamic>>;
         _products = results[1] as List<Map<String, dynamic>>;
         _favoriteIds = results[2] as Set<String>;
@@ -93,6 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onCategoryBannerTap(Map<String, dynamic> banner) {
+    if (_isSingleMode) return; // بلا تنقّل بين الأقسام في المتجر المخصص
     final categoryId = banner['category_id'] as String?;
     if (categoryId != null) {
       setState(() => _selectedCategory = categoryId);
@@ -160,42 +170,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
 
-                    // ★ البنر الإعلاني المتحرك ★
+                    // البنر الإعلاني المتحرك
                     if (_promoBanners.isNotEmpty) ...[
                       _PromoCarousel(banners: _promoBanners),
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
-                    // التصنيفات — من اليمين لليسار
-                    SizedBox(
-                      height: 44,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        reverse: true,
-                        padding: AppSpacing.screenPadding,
-                        children: [
-                          _smallChip('الكل', _selectedCategory == null, () {
-                            setState(() => _selectedCategory = null);
-                            _load();
-                          }),
-                          for (final c in _categories) ...[
-                            const SizedBox(width: AppSpacing.sm),
-                            _smallChip(
-                              c['name_ar'] as String,
-                              _selectedCategory == c['id'],
-                              () {
-                                setState(() =>
-                                    _selectedCategory = c['id'] as String);
-                                _load();
-                              },
-                            ),
+                    // شريط التصنيفات — يُخفى في وضع القسم الواحد
+                    if (!_isSingleMode) ...[
+                      SizedBox(
+                        height: 44,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          padding: AppSpacing.screenPadding,
+                          children: [
+                            _smallChip('الكل', _selectedCategory == null, () {
+                              setState(() => _selectedCategory = null);
+                              _load();
+                            }),
+                            for (final c in _categories) ...[
+                              const SizedBox(width: AppSpacing.sm),
+                              _smallChip(
+                                c['name_ar'] as String,
+                                _selectedCategory == c['id'],
+                                () {
+                                  setState(() =>
+                                      _selectedCategory = c['id'] as String);
+                                  _load();
+                                },
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
 
-                    // ★ بنرات الأقسام — بطاقات تحت بعض ★
+                    // بنرات الأقسام
                     if (_categoryBanners.isNotEmpty) ...[
                       Padding(
                         padding: AppSpacing.screenPadding,
@@ -214,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.sm),
                     ],
 
-                    // شبكة المنتجات — بطاقات أصغر وأنعم
+                    // شبكة المنتجات
                     Padding(
                       padding: const EdgeInsets.fromLTRB(25, 0, 25, 24),
                       child: _products.isEmpty
@@ -465,7 +477,7 @@ class _NotificationBell extends StatelessWidget {
               child: Container(
                 width: 9, height: 9,
                 decoration: const BoxDecoration(
-                    color: AppColors.accent, shape: BoxShape.circle),
+                    color: AppColors.alert, shape: BoxShape.circle),
               ),
             ),
           ],
@@ -742,7 +754,6 @@ class _ResultRow extends StatelessWidget {
 }
 
 // ================================================================= المحفوظات
-/// شاشة المحفوظات — تجلب المفضلة من القاعدة وتعيد التحميل عند فتح تبويبها.
 class SavedItemsScreen extends StatefulWidget {
   const SavedItemsScreen({super.key});
 
